@@ -1,0 +1,526 @@
+# Load required libraries
+library(dplyr)
+library(writexl)
+library(readxl)
+library(mice)
+library(VIM)
+library(tidyverse)
+library(fpp)
+library(forecast)
+library(backtest)
+library(quantmod)
+library(lubridate)
+library(vars)
+library(zoo)
+library(caret)
+library(Metrics)
+
+##############################-ARIMA-##############################
+
+##############################-SWISS HYDRO-##############################
+
+# Create a time series object for the Swiss Hydro data
+swiss_hydro <- ts(imp_energy_sources$CH.hydro, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Swiss hydro time series
+swiss_hydroAR <- auto.arima(swiss_hydro, seasonal = FALSE)
+
+# Determine performance metrics
+summary(swiss_hydroAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+swiss_hydroAR_june1st <- forecast(swiss_hydroAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(swiss_hydroAR_june1st)
+
+# Plot the results - Swiss Hydro (CH.hydro) June 1st
+plot(swiss_hydroAR_june1st, type="l", xaxt = 'n', main = "Swiss Hydro - ARIMA(5,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-SWISS NUCLEAR-##############################
+
+# Create a time series object for the Swiss nuclear data
+swiss_nuclear <- ts(imp_energy_sources$CH.nuclear, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Swiss nuclear time series
+swiss_nuclearAR <- auto.arima(swiss_nuclear, seasonal = FALSE)
+
+# Determine performance metrics
+summary(swiss_nuclearAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+swiss_nuclearAR_june1st <- forecast(swiss_nuclearAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(swiss_nuclearAR_june1st)
+
+# Plot the results - Swiss Nuclear (CH.nuclear) June 1st
+plot(swiss_nuclearAR_june1st, type="l", xaxt = 'n', main = "Swiss Nuclear - ARIMA(0,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-SWISS SOLAR-##############################
+
+# Create a time series object for the Swiss solar data
+swiss_solar <- ts(imp_energy_sources$CH.solar, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Swiss solar time series
+swiss_solarAR <- auto.arima(swiss_solar, seasonal = FALSE)
+
+# Determine performance metrics
+summary(swiss_solarAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+swiss_solarAR_june1st <- forecast(swiss_solarAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(swiss_solarAR_june1st)
+
+# Plot the results - Swiss Solar (CH.hydro) June 1st
+plot(swiss_solarAR_june1st, type="l", xaxt = 'n', main = "Swiss Solar - ARIMA(2,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-SWISS WIND-##############################
+
+# Create a time series object for the Swiss wind data
+swiss_wind <- ts(imp_energy_sources$CH.wind, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Swiss wind time series
+swiss_windAR <- auto.arima(swiss_wind, seasonal = FALSE)
+
+# Determine performance metrics
+summary(swiss_windAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+swiss_windAR_june1st <- forecast(swiss_windAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(swiss_windAR_june1st)
+
+# Plot the results - Swiss Wind (CH.nuclear) June 1st
+plot(swiss_windAR_june1st, type="l", xaxt = 'n', main = "Swiss Wind - ARIMA(3,1,4)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY HYDRO-##############################
+
+# Create a time series object for the Germany hydro data
+germany_hydro <- ts(imp_energy_sources$DE.hydro, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany hydro time series
+germany_hydroAR <- auto.arima(germany_hydro, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_hydroAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_hydroAR_june1st <- forecast(germany_hydroAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_hydroAR_june1st)
+
+# Plot the results - Swiss Nuclear (DE.hydro) June 1st
+plot(germany_hydroAR_june1st, type="l", xaxt = 'n', main = "Germany Hydro - ARIMA(0,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY GAS-##############################
+
+# Create a time series object for the Germany gas data
+germany_gas <- ts(imp_energy_sources$DE.gas, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany gas time series
+germany_gasAR <- auto.arima(germany_gas, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_gasAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_gasAR_june1st <- forecast(germany_gasAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_gasAR_june1st)
+
+# Plot the results - Germany Gas (DE.gas) June 1st
+plot(germany_gasAR_june1st, type="l", xaxt = 'n', main = "Germany Gas - ARIMA(1,0,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY OIL-##############################
+
+# Create a time series object for the Germany oil data
+germany_oil <- ts(imp_energy_sources$DE.oil, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany oil time series
+germany_oilAR <- auto.arima(germany_oil, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_oilAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_oilAR_june1st <- forecast(germany_oilAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_oilAR_june1st)
+
+# Plot the results - Germany Oil (DE.oil) June 1st
+plot(germany_oilAR_june1st, type="l", xaxt = 'n', main = "Germany Oil - ARIMA(1,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY COAL-##############################
+
+# Create a time series object for the Germany coal data
+germany_coal <- ts(imp_energy_sources$DE.coal, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany coal time series
+germany_coalAR <- auto.arima(germany_coal, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_coalAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_coalAR_june1st <- forecast(germany_coalAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_coalAR_june1st)
+
+# Plot the results - Germany Coal (DE.coal) June 1st
+plot(germany_coalAR_june1st, type="l", xaxt = 'n', main = "Germany Coal - ARIMA(1,1,2)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY NUCLEAR-##############################
+
+# Create a time series object for the Germany nuclear data
+germany_nuclear <- ts(imp_energy_sources$DE.nuclear, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany nuclear time series
+germany_nuclearAR <- auto.arima(germany_nuclear, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_nuclearAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_nuclearAR_june1st <- forecast(germany_nuclearAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_nuclearAR_june1st)
+
+# Plot the results - Germany Nuclear (DE.nuclear) June 1st
+plot(germany_nuclearAR_june1st, type="l", xaxt = 'n', main = "Germany Nuclear - ARIMA(2,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY SOLAR-##############################
+
+# Create a time series object for the Germany solar data
+germany_solar <- ts(imp_energy_sources$DE.solar, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany solar time series
+germany_solarAR <- auto.arima(germany_solar, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_solarAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+germany_solarAR_june1st <- forecast(germany_solarAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_solarAR_june1st)
+
+# Plot the results - Germnany Solar (DE.solar) June 1st
+plot(germany_solarAR_june1st, type="l", xaxt = 'n', main = "Germany Solar - ARIMA(1,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-GERMANY WIND-##############################
+
+# Create a time series object for the Germany wind data
+germany_wind <- ts(imp_energy_sources$DE.wind, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Germany wind time series
+germany_windAR <- auto.arima(germany_wind, seasonal = FALSE)
+
+# Determine performance metrics
+summary(germany_windAR)
+
+# Forecast the next time step (June 1st) using the SARIMA model
+germany_windAR_june1st <- forecast(germany_windAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(germany_windAR_june1st)
+
+# Plot the results - Germany Wind (DE.wind) June 1st
+plot(germany_windAR_june1st, type="l", xaxt = 'n', main = "Germany Wind - ARIMA(3,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE HYDRO-##############################
+
+# Create a time series object for the France hydro data
+france_hydro <- ts(imp_energy_sources$FR.hydro, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France hydro time series
+france_hydroAR <- auto.arima(france_hydro, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_hydroAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_hydroAR_june1st <- forecast(france_hydroAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_hydroAR_june1st)
+
+# Plot the results - France Hydro (FR.Hydro) June 1st
+plot(france_hydroAR_june1st, type="l", xaxt = 'n', main = "France Hydro - ARIMA(1,1,5)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE GAS-##############################
+
+# Create a time series object for the France gas data
+france_gas <- ts(imp_energy_sources$FR.gas, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France gas time series
+france_gasAR <- auto.arima(france_gas, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_gasAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_gasAR_june1st <- forecast(france_gasAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_gasAR_june1st)
+
+# Plot the results - France Gas (FR.gas) June 1st
+plot(france_gasAR_june1st, type="l", xaxt = 'n', main = "France Gas - ARIMA(0,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE OIL-##############################
+
+# Create a time series object for the France oil data
+france_oil <- ts(imp_energy_sources$FR.oil, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France gas time series
+france_oilAR <- auto.arima(france_oil, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_oilAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_oilAR_june1st <- forecast(france_oilAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_oilAR_june1st)
+
+# Plot the results - France Oil (FR.oil) June 1st
+plot(france_oilAR_june1st, type="l", xaxt = 'n', main = "France Oil - ARIMA(1,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE COAL-##############################
+
+# Create a time series object for the France coal data
+france_coal <- ts(imp_energy_sources$FR.coal, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France coal time series
+france_coalAR <- auto.arima(france_coal, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_coalAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_coalAR_june1st <- forecast(france_coalAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_coalAR_june1st)
+
+# Plot the results - France Coal (FR.coal) June 1st
+plot(france_coalAR_june1st, type="l", xaxt = 'n', main = "France Coal - ARIMA(3,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE NUCLEAR-##############################
+
+# Create a time series object for the France nuclear data
+france_nuclear <- ts(imp_energy_sources$FR.nuclear, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France nuclear time series
+france_nuclearAR <- auto.arima(france_nuclear, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_nuclearAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_nuclearAR_june1st <- forecast(france_nuclearAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_nuclearAR_june1st)
+
+# Plot the results - France Nuclear (FR.nuclear) June 1st
+plot(france_nuclearAR_june1st, type="l", xaxt = 'n', main = "France Nuclear - ARIMA(5,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE SOLAR-##############################
+
+# Create a time series object for the France solar data
+france_solar <- ts(imp_energy_sources$FR.solar, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France solar time series
+france_solarAR <- auto.arima(france_solar, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_solarAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_solarAR_june1st <- forecast(france_solarAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_solarAR_june1st)
+
+# Plot the results - France Solar (FR.solar) June 1st
+plot(france_solarAR_june1st, type="l", xaxt = 'n', main = "France Solar - ARIMA(2,1,5)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-FRANCE WIND-##############################
+
+# Create a time series object for the France wind data
+france_wind <- ts(imp_energy_sources$FR.wind, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the France wind time series
+france_windAR <- auto.arima(france_wind, seasonal = FALSE)
+
+# Determine performance metrics
+summary(france_windAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+france_windAR_june1st <- forecast(france_windAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(france_windAR_june1st)
+
+# Plot the results - France Wind (FR.wind) June 1st
+plot(france_windAR_june1st, type="l", xaxt = 'n', main = "France Wind - ARIMA(3,1,2)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-IRELAND HYDRO-##############################
+
+# Create a time series object for the Ireland hydro data
+ireland_hydro <- ts(imp_energy_sources$IE.hydro, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Ireland hydro time series
+ireland_hydroAR <- auto.arima(ireland_hydro, seasonal = FALSE)
+
+# Determine performance metrics
+summary(ireland_hydroAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+ireland_hydroAR_june1st <- forecast(ireland_hydroAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(ireland_hydroAR_june1st)
+
+# Plot the results - Ireland Hydro (IE.hydro) June 1st
+plot(ireland_hydroAR_june1st, type="l", xaxt = 'n', main = "Ireland Hydro - ARIMA(3,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-IRELAND GAS-##############################
+
+# Create a time series object for the Ireland gas data
+ireland_gas <- ts(imp_energy_sources$IE.gas, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Ireland gas time series
+ireland_gasAR <- auto.arima(ireland_gas, seasonal = FALSE)
+
+# Determine performance metrics
+summary(ireland_gasAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+ireland_gasAR_june1st <- forecast(ireland_gasAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(ireland_gasAR_june1st)
+
+# Plot the results - Ireland Gas (IE.gas) June 1st
+plot(ireland_gasAR_june1st, type="l", xaxt = 'n', main = "Ireland Gas - ARIMA(3,1,4)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-IRELAND OIL-##############################
+
+# Create a time series object for the Ireland oil data
+ireland_oil <- ts(imp_energy_sources$IE.oil, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Ireland oil time series
+ireland_oilAR <- auto.arima(ireland_oil, seasonal = FALSE)
+
+# Determine performance metrics
+summary(ireland_oilAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+ireland_oilAR_june1st <- forecast(ireland_oilAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(ireland_oilAR_june1st)
+
+# Plot the results - Ireland Oil (IE.oil) June 1st
+plot(ireland_oilAR_june1st, type="l", xaxt = 'n', main = "Ireland Oil - ARIMA(2,1,2)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-IRELAND COAL-##############################
+
+# Create a time series object for the Ireland coal data
+ireland_coal <- ts(imp_energy_sources$IE.coal, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Ireland coal time series
+ireland_coalAR <- auto.arima(ireland_coal, seasonal = FALSE)
+
+# Determine performance metrics
+summary(ireland_coalAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+ireland_coalAR_june1st <- forecast(ireland_coalAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(ireland_coalAR_june1st)
+
+# Plot the results - Ireland Coal (IE.coal) June 1st
+plot(ireland_coalAR_june1st, type="l", xaxt = 'n', main = "Ireland Coal - ARIMA(1,1,1)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+##############################-IRELAND WIND-##############################
+
+# Create a time series object for the Ireland wind data
+ireland_wind <- ts(imp_energy_sources$IE.wind, start = c(2020, 03, 11), end = c(2023, 05, 31), frequency = 365)
+
+# Fit an ARIMA model to the Ireland wind time series
+ireland_windAR <- auto.arima(ireland_wind, seasonal = FALSE)
+
+# Determine performance metrics
+summary(ireland_windAR)
+
+# Forecast the next time step (June 1st) using the ARIMA model
+ireland_windAR_june1st <- forecast(ireland_windAR, h = 1)
+
+# Print the forecasted value for June 1st
+print(ireland_windAR_june1st)
+
+# Plot the results - Ireland Wind (IE.wind) June 1st
+plot(ireland_windAR_june1st, type="l", xaxt = 'n', main = "Ireland Wind - ARIMA(3,1,3)", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(2020.0, 2021.0, 2022.0, 2023.0), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+
+################################################################################
