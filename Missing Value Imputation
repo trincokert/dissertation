@@ -1,0 +1,72 @@
+# Load required libraries
+library(dplyr)
+library(writexl)
+library(readxl)
+library(mice)
+library(VIM)
+library(tidyverse)
+library(fpp)
+library(forecast)
+library(backtest)
+library(quantmod)
+library(lubridate)
+library(vars)
+library(zoo)
+
+##############################-MISSING VALUE IMPUTATION-##############################
+
+# Import the aggregated dataset
+energy_sources <- read_excel("energy_sources.xlsx") #data source = https://transparency.entsoe.eu/
+
+head(energy_sources) # First 5 rows of the dataset
+tail(energy_sources) # Last 5 rows of the dataset
+str(energy_sources) # Structure of the dataset
+
+# Checking for missing values
+sapply(energy_sources, function(x) sum(is.na(x)))
+
+# Calculate percentage of missing values for each column
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+missing_percentages <- apply(energy_sources, 2, pMiss)
+
+# Identify columns exceeding maximum threshold of missing values of 20%
+columns_to_drop <- names(missing_percentages[missing_percentages > 20])
+
+# Drop the identified columns
+energy_sources_new <- energy_sources[,!names(energy_sources) %in% c("GB.hydro", "GB.gas", "GB.coal", "GB.oil", "GB.nuclear", "GB.solar", "GB.wind")]
+
+# Determine pattern of missing data
+aggr_plot <- aggr(energy_sources_new,
+                  col=c('navyblue', 'red'), numbers=TRUE, sortVars=TRUE,
+                  labels=names(energy_sources_new), cex.axis=0.7, gap=3,
+                  ylab=c("Histogram of missing data", "Pattern"))
+
+# Imputing missing data
+imputed_Data <- mice(energy_sources_new, m=20, maxit=30, meth="cart", seed=500)
+summary(imputed_Data)
+
+# Checking the imputed data for 'France - Hard Coal' energy source
+imputed_Data$imp$FR.coal
+
+# Checking the imputed data for 'Ireland - Hydro' energy source
+imputed_Data$imp$IE.hydro
+
+# Checking the imputed data for 'Ireland - Gas' energy source
+imputed_Data$imp$IE.gas
+
+# Checking the imputed data for 'Ireland - Oil' energy source
+imputed_Data$imp$IE.oil
+
+# Checking the imputed data for 'Ireland - Hard Coal' energy source
+imputed_Data$imp$IE.coal
+
+# Checking the imputed data for 'Ireland - Wind' energy source
+imputed_Data$imp$IE.wind
+
+# Retrieving completed dataset with imputed values
+imp_energy_sources <- complete(imputed_Data, 1)
+
+# Inspecting the distribution of original and imputed data
+densityplot(imputed_Data)
+
+################################################################################
