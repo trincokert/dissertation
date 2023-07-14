@@ -1,0 +1,3341 @@
+#Load required packages
+install.packages('devtools')
+devtools::install_github("rstudio/tensorflow")
+devtools::install_github("rstudio/keras")
+
+tensorflow::install_tensorflow()
+tensorflow::tf_config()
+
+library(keras)
+library(tensorflow)
+install_keras()
+install_tensorflow()
+
+##############################-RECURRENT NEURAL NETWORKS (RNNs) // LSTM-##############################
+
+##############################-SWISS HYDRO-##############################
+
+# Importing and selecting data for CH.hydro
+swiss_hydro_data <- imp_energy_sources %>% dplyr::select(Date, CH.hydro)
+
+# Set the scaling factors for the Swiss hydro data
+swiss_hydro_scale_factors <- c(mean(swiss_hydro_data$CH.hydro), sd(swiss_hydro_data$CH.hydro))
+
+# Prepare the training data
+swiss_hydro_scaled_train <- swiss_hydro_data %>%
+  dplyr::select(CH.hydro) %>%
+  dplyr::mutate(CH.hydro = (CH.hydro - swiss_hydro_scale_factors[1]) / swiss_hydro_scale_factors[2])
+
+swiss_hydro_prediction <- 1
+swiss_hydro_lag <- swiss_hydro_prediction
+
+swiss_hydro_scaled_train <- as.matrix(swiss_hydro_scaled_train)
+
+swiss_hydro_x_train_data <- t(sapply(
+  1:(length(swiss_hydro_scaled_train) - swiss_hydro_lag - swiss_hydro_prediction + 1),
+  function(x) swiss_hydro_scaled_train[x:(x + swiss_hydro_lag - 1), 1]
+))
+
+swiss_hydro_x_train_arr <- array(
+  data = as.numeric(unlist(swiss_hydro_x_train_data)),
+  dim = c(
+    nrow(swiss_hydro_x_train_data),
+    swiss_hydro_lag,
+    1
+  )
+)
+
+swiss_hydro_y_train_data <- t(sapply(
+  (1 + swiss_hydro_lag):(length(swiss_hydro_scaled_train) - swiss_hydro_prediction + 1),
+  function(x) swiss_hydro_scaled_train[x:(x + swiss_hydro_prediction - 1)]
+))
+
+swiss_hydro_y_train_arr <- array(
+  data = as.numeric(unlist(swiss_hydro_y_train_data)),
+  dim = c(
+    nrow(swiss_hydro_y_train_data),
+    swiss_hydro_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+swiss_hydro_x_test <- swiss_hydro_data$CH.hydro[(nrow(swiss_hydro_scaled_train) - swiss_hydro_prediction + 1):nrow(swiss_hydro_scaled_train)]
+swiss_hydro_x_test_scaled <- (swiss_hydro_x_test - swiss_hydro_scale_factors[1]) / swiss_hydro_scale_factors[2]
+
+swiss_hydro_x_pred_arr <- array(
+  data = swiss_hydro_x_test_scaled,
+  dim = c(
+    1,
+    swiss_hydro_lag,
+    1
+  )
+)
+
+use_condaenv("r-tensorflow")
+
+# Build and train the LSTM model
+swiss_hydro_lstm_model <- keras_model_sequential()
+
+swiss_hydro_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, swiss_hydro_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+swiss_hydro_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+swiss_hydro_lstm_model %>% fit(
+  x = swiss_hydro_x_train_arr,
+  y = swiss_hydro_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+swiss_hydro_lstm_forecast <- swiss_hydro_lstm_model %>%
+  predict(swiss_hydro_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+swiss_hydro_lstm_forecast <- swiss_hydro_lstm_forecast * swiss_hydro_scale_factors[2] + swiss_hydro_scale_factors[1]
+
+# Create the forecast object
+swiss_hydro_fitted <- predict(swiss_hydro_lstm_model, swiss_hydro_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(swiss_hydro_fitted)) > 1) {
+  if (dim(swiss_hydro_fitted)[2] > 1) {
+    swiss_hydro_fit <- c(swiss_hydro_fitted[, 1], swiss_hydro_fitted[dim(swiss_hydro_fitted)[1], 2:dim(swiss_hydro_fitted)[2]])
+  } else {
+    swiss_hydro_fit <- swiss_hydro_fitted[, 1]
+  }
+} else {
+  swiss_hydro_fit <- swiss_hydro_fitted
+}
+
+swiss_hydro_fitted <- swiss_hydro_fit * swiss_hydro_scale_factors[2] + swiss_hydro_scale_factors[1]
+
+swiss_hydro_fitted <- c(rep(NA, swiss_hydro_lag), swiss_hydro_fitted)
+
+swiss_hydro_lstm_forecast <- timetk::tk_ts(swiss_hydro_lstm_forecast,
+                               start = c(2023, 6),
+                               end = c(2023, 6),
+                               frequency = 1
+)
+
+swiss_hydro_input_ts <- timetk::tk_ts(swiss_hydro_data$CH.hydro, 
+                          start = c(2020, 3), 
+                          end = c(2023, 5), 
+                          frequency = 1
+)
+
+swiss_hydro_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = swiss_hydro_lstm_forecast,
+  x = swiss_hydro_input_ts,
+  fitted = swiss_hydro_fitted,
+  residuals = as.numeric(swiss_hydro_input_ts) - as.numeric(swiss_hydro_fitted)
+)
+
+class(swiss_hydro_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_swiss_hydro_pred <- swiss_hydro_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_swiss_hydro_pred)
+
+# Determine performance metrics
+lstm_swiss_hydro_mape <- mean(abs((swiss_hydro_data$CH.hydro - lstm_swiss_hydro_pred) / swiss_hydro_data$CH.hydro)) * 100
+print(lstm_swiss_hydro_mape)
+
+##############################-SWISS NUCLEAR-##############################
+
+# Importing and selecting data for CH.nuclear
+swiss_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, CH.nuclear)
+
+# Set the scaling factors for the Swiss nuclear data
+swiss_nuclear_scale_factors <- c(mean(swiss_nuclear_data$CH.nuclear), sd(swiss_nuclear_data$CH.nuclear))
+
+# Prepare the training data
+swiss_nuclear_scaled_train <- swiss_nuclear_data %>%
+  dplyr::select(CH.nuclear) %>%
+  dplyr::mutate(CH.nuclear = (CH.nuclear - swiss_nuclear_scale_factors[1]) / swiss_nuclear_scale_factors[2])
+
+swiss_nuclear_prediction <- 1
+swiss_nuclear_lag <- swiss_nuclear_prediction
+
+swiss_nuclear_scaled_train <- as.matrix(swiss_nuclear_scaled_train)
+
+swiss_nuclear_x_train_data <- t(sapply(
+  1:(length(swiss_nuclear_scaled_train) - swiss_nuclear_lag - swiss_nuclear_prediction + 1),
+  function(x) swiss_nuclear_scaled_train[x:(x + swiss_nuclear_lag - 1), 1]
+))
+
+swiss_nuclear_x_train_arr <- array(
+  data = as.numeric(unlist(swiss_nuclear_x_train_data)),
+  dim = c(
+    nrow(swiss_nuclear_x_train_data),
+    swiss_nuclear_lag,
+    1
+  )
+)
+
+swiss_nuclear_y_train_data <- t(sapply(
+  (1 + swiss_nuclear_lag):(length(swiss_nuclear_scaled_train) - swiss_nuclear_prediction + 1),
+  function(x) swiss_nuclear_scaled_train[x:(x + swiss_nuclear_prediction - 1)]
+))
+
+swiss_nuclear_y_train_arr <- array(
+  data = as.numeric(unlist(swiss_nuclear_y_train_data)),
+  dim = c(
+    nrow(swiss_nuclear_y_train_data),
+    swiss_nuclear_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+swiss_nuclear_x_test <- swiss_nuclear_data$CH.nuclear[(nrow(swiss_nuclear_scaled_train) - swiss_nuclear_prediction + 1):nrow(swiss_nuclear_scaled_train)]
+swiss_nuclear_x_test_scaled <- (swiss_nuclear_x_test - swiss_nuclear_scale_factors[1]) / swiss_nuclear_scale_factors[2]
+
+swiss_nuclear_x_pred_arr <- array(
+  data = swiss_nuclear_x_test_scaled,
+  dim = c(
+    1,
+    swiss_nuclear_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+swiss_nuclear_lstm_model <- keras_model_sequential()
+
+swiss_nuclear_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, swiss_nuclear_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+swiss_nuclear_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+swiss_nuclear_lstm_model %>% fit(
+  x = swiss_nuclear_x_train_arr,
+  y = swiss_nuclear_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+swiss_nuclear_lstm_forecast <- swiss_nuclear_lstm_model %>%
+  predict(swiss_nuclear_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+swiss_nuclear_lstm_forecast <- swiss_nuclear_lstm_forecast * swiss_nuclear_scale_factors[2] + swiss_nuclear_scale_factors[1]
+
+# Create the forecast object
+swiss_nuclear_fitted <- predict(swiss_nuclear_lstm_model, swiss_nuclear_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(swiss_nuclear_fitted)) > 1) {
+  if (dim(swiss_nuclear_fitted)[2] > 1) {
+    swiss_nuclear_fit <- c(swiss_nuclear_fitted[, 1], swiss_nuclear_fitted[dim(swiss_nuclear_fitted)[1], 2:dim(swiss_nuclear_fitted)[2]])
+  } else {
+    swiss_nuclear_fit <- swiss_nuclear_fitted[, 1]
+  }
+} else {
+  swiss_nuclear_fit <- swiss_nuclear_fitted
+}
+
+swiss_nuclear_fitted <- swiss_nuclear_fit * swiss_nuclear_scale_factors[2] + swiss_nuclear_scale_factors[1]
+
+swiss_nuclear_fitted <- c(rep(NA, swiss_nuclear_lag), swiss_nuclear_fitted)
+
+swiss_nuclear_lstm_forecast <- timetk::tk_ts(swiss_nuclear_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+swiss_nuclear_input_ts <- timetk::tk_ts(swiss_nuclear_data$CH.nuclear, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+swiss_nuclear_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = swiss_nuclear_lstm_forecast,
+  x = swiss_nuclear_input_ts,
+  fitted = swiss_nuclear_fitted,
+  residuals = as.numeric(swiss_nuclear_input_ts) - as.numeric(swiss_nuclear_fitted)
+)
+
+class(swiss_nuclear_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_swiss_nuclear_pred <- swiss_nuclear_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_swiss_nuclear_pred)
+
+# Determine performance metrics
+lstm_swiss_nuclear_mape <- mean(abs((swiss_nuclear_data$CH.nuclear - lstm_swiss_nuclear_pred) / swiss_nuclear_data$CH.nuclear)) * 100
+print(lstm_swiss_nuclear_mape)
+
+##############################-SWISS SOLAR-##############################
+
+# Importing and selecting data for CH.solar
+swiss_solar_data <- imp_energy_sources %>% dplyr::select(Date, CH.solar)
+
+# Set the scaling factors for the Swiss solar data
+swiss_solar_scale_factors <- c(mean(swiss_solar_data$CH.solar), sd(swiss_solar_data$CH.solar))
+
+# Prepare the training data
+swiss_solar_scaled_train <- swiss_solar_data %>%
+  dplyr::select(CH.solar) %>%
+  dplyr::mutate(CH.solar = (CH.solar - swiss_solar_scale_factors[1]) / swiss_solar_scale_factors[2])
+
+swiss_solar_prediction <- 1
+swiss_solar_lag <- swiss_solar_prediction
+
+swiss_solar_scaled_train <- as.matrix(swiss_solar_scaled_train)
+
+swiss_solar_x_train_data <- t(sapply(
+  1:(length(swiss_solar_scaled_train) - swiss_solar_lag - swiss_solar_prediction + 1),
+  function(x) swiss_solar_scaled_train[x:(x + swiss_solar_lag - 1), 1]
+))
+
+swiss_solar_x_train_arr <- array(
+  data = as.numeric(unlist(swiss_solar_x_train_data)),
+  dim = c(
+    nrow(swiss_solar_x_train_data),
+    swiss_solar_lag,
+    1
+  )
+)
+
+swiss_solar_y_train_data <- t(sapply(
+  (1 + swiss_solar_lag):(length(swiss_solar_scaled_train) - swiss_solar_prediction + 1),
+  function(x) swiss_solar_scaled_train[x:(x + swiss_solar_prediction - 1)]
+))
+
+swiss_solar_y_train_arr <- array(
+  data = as.numeric(unlist(swiss_solar_y_train_data)),
+  dim = c(
+    nrow(swiss_solar_y_train_data),
+    swiss_solar_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+swiss_solar_x_test <- swiss_solar_data$CH.solar[(nrow(swiss_solar_scaled_train) - swiss_solar_prediction + 1):nrow(swiss_solar_scaled_train)]
+swiss_solar_x_test_scaled <- (swiss_solar_x_test - swiss_solar_scale_factors[1]) / swiss_solar_scale_factors[2]
+
+swiss_solar_x_pred_arr <- array(
+  data = swiss_solar_x_test_scaled,
+  dim = c(
+    1,
+    swiss_solar_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+swiss_solar_lstm_model <- keras_model_sequential()
+
+swiss_solar_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, swiss_solar_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+swiss_solar_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+swiss_solar_lstm_model %>% fit(
+  x = swiss_solar_x_train_arr,
+  y = swiss_solar_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+swiss_solar_lstm_forecast <- swiss_solar_lstm_model %>%
+  predict(swiss_solar_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+swiss_solar_lstm_forecast <- swiss_solar_lstm_forecast * swiss_solar_scale_factors[2] + swiss_solar_scale_factors[1]
+
+# Create the forecast object
+swiss_solar_fitted <- predict(swiss_solar_lstm_model, swiss_solar_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(swiss_solar_fitted)) > 1) {
+  if (dim(swiss_solar_fitted)[2] > 1) {
+    swiss_solar_fit <- c(swiss_solar_fitted[, 1], swiss_solar_fitted[dim(swiss_solar_fitted)[1], 2:dim(swiss_solar_fitted)[2]])
+  } else {
+    swiss_solar_fit <- swiss_solar_fitted[, 1]
+  }
+} else {
+  swiss_solar_fit <- swiss_solar_fitted
+}
+
+swiss_solar_fitted <- swiss_solar_fit * swiss_solar_scale_factors[2] + swiss_solar_scale_factors[1]
+
+swiss_solar_fitted <- c(rep(NA, swiss_solar_lag), swiss_solar_fitted)
+
+swiss_solar_lstm_forecast <- timetk::tk_ts(swiss_solar_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+swiss_solar_input_ts <- timetk::tk_ts(swiss_solar_data$CH.solar, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+swiss_solar_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = swiss_solar_lstm_forecast,
+  x = swiss_solar_input_ts,
+  fitted = swiss_solar_fitted,
+  residuals = as.numeric(swiss_solar_input_ts) - as.numeric(swiss_solar_fitted)
+)
+
+class(swiss_solar_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_swiss_solar_pred <- swiss_solar_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_swiss_solar_pred)
+
+# Determine performance metrics
+lstm_swiss_solar_mape <- mean(abs((swiss_solar_data$CH.solar - lstm_swiss_solar_pred) / swiss_solar_data$CH.solar)) * 100
+print(lstm_swiss_solar_mape)
+
+##############################-SWISS WIND-##############################
+
+# Importing and selecting data for CH.wind
+swiss_wind_data <- imp_energy_sources %>% dplyr::select(Date, CH.wind)
+
+# Set the scaling factors for the Swiss wind data
+swiss_wind_scale_factors <- c(mean(swiss_wind_data$CH.wind), sd(swiss_wind_data$CH.wind))
+
+# Prepare the training data
+swiss_wind_scaled_train <- swiss_wind_data %>%
+  dplyr::select(CH.wind) %>%
+  dplyr::mutate(CH.wind = (CH.wind - swiss_wind_scale_factors[1]) / swiss_wind_scale_factors[2])
+
+swiss_wind_prediction <- 1
+swiss_wind_lag <- swiss_wind_prediction
+
+swiss_wind_scaled_train <- as.matrix(swiss_wind_scaled_train)
+
+swiss_wind_x_train_data <- t(sapply(
+  1:(length(swiss_wind_scaled_train) - swiss_wind_lag - swiss_wind_prediction + 1),
+  function(x) swiss_wind_scaled_train[x:(x + swiss_wind_lag - 1), 1]
+))
+
+swiss_wind_x_train_arr <- array(
+  data = as.numeric(unlist(swiss_wind_x_train_data)),
+  dim = c(
+    nrow(swiss_wind_x_train_data),
+    swiss_wind_lag,
+    1
+  )
+)
+
+swiss_wind_y_train_data <- t(sapply(
+  (1 + swiss_wind_lag):(length(swiss_wind_scaled_train) - swiss_wind_prediction + 1),
+  function(x) swiss_wind_scaled_train[x:(x + swiss_wind_prediction - 1)]
+))
+
+swiss_wind_y_train_arr <- array(
+  data = as.numeric(unlist(swiss_wind_y_train_data)),
+  dim = c(
+    nrow(swiss_wind_y_train_data),
+    swiss_wind_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+swiss_wind_x_test <- swiss_wind_data$CH.wind[(nrow(swiss_wind_scaled_train) - swiss_wind_prediction + 1):nrow(swiss_wind_scaled_train)]
+swiss_wind_x_test_scaled <- (swiss_wind_x_test - swiss_wind_scale_factors[1]) / swiss_wind_scale_factors[2]
+
+swiss_wind_x_pred_arr <- array(
+  data = swiss_wind_x_test_scaled,
+  dim = c(
+    1,
+    swiss_wind_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+swiss_wind_lstm_model <- keras_model_sequential()
+
+swiss_wind_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, swiss_wind_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+swiss_wind_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+swiss_wind_lstm_model %>% fit(
+  x = swiss_wind_x_train_arr,
+  y = swiss_wind_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+swiss_wind_lstm_forecast <- swiss_wind_lstm_model %>%
+  predict(swiss_wind_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+swiss_wind_lstm_forecast <- swiss_wind_lstm_forecast * swiss_wind_scale_factors[2] + swiss_wind_scale_factors[1]
+
+# Create the forecast object
+swiss_wind_fitted <- predict(swiss_wind_lstm_model, swiss_wind_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(swiss_wind_fitted)) > 1) {
+  if (dim(swiss_wind_fitted)[2] > 1) {
+    swiss_wind_fit <- c(swiss_wind_fitted[, 1], swiss_wind_fitted[dim(swiss_wind_fitted)[1], 2:dim(swiss_wind_fitted)[2]])
+  } else {
+    swiss_wind_fit <- swiss_wind_fitted[, 1]
+  }
+} else {
+  swiss_wind_fit <- swiss_wind_fitted
+}
+
+swiss_wind_fitted <- swiss_wind_fit * swiss_wind_scale_factors[2] + swiss_wind_scale_factors[1]
+
+swiss_wind_fitted <- c(rep(NA, swiss_wind_lag), swiss_wind_fitted)
+
+swiss_wind_lstm_forecast <- timetk::tk_ts(swiss_wind_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+swiss_wind_input_ts <- timetk::tk_ts(swiss_wind_data$CH.wind, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+swiss_wind_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = swiss_wind_lstm_forecast,
+  x = swiss_wind_input_ts,
+  fitted = swiss_wind_fitted,
+  residuals = as.numeric(swiss_wind_input_ts) - as.numeric(swiss_wind_fitted)
+)
+
+class(swiss_wind_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_swiss_wind_pred <- swiss_wind_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_swiss_wind_pred)
+
+# Determine performance metrics
+lstm_swiss_wind_mape <- mean(abs((swiss_wind_data$CH.wind - lstm_swiss_wind_pred) / swiss_wind_data$CH.wind)) * 100
+print(lstm_swiss_wind_mape)
+
+##############################-GERMANY HYDRO-##############################
+
+# Importing and selecting data for DE.hydro
+germany_hydro_data <- imp_energy_sources %>% dplyr::select(Date, DE.hydro)
+
+# Set the scaling factors for the Germany hydro data
+germany_hydro_scale_factors <- c(mean(germany_hydro_data$DE.hydro), sd(germany_hydro_data$DE.hydro))
+
+# Prepare the training data
+germany_hydro_scaled_train <- germany_hydro_data %>%
+  dplyr::select(DE.hydro) %>%
+  dplyr::mutate(DE.hydro = (DE.hydro - germany_hydro_scale_factors[1]) / germany_hydro_scale_factors[2])
+
+germany_hydro_prediction <- 1
+germany_hydro_lag <- germany_hydro_prediction
+
+germany_hydro_scaled_train <- as.matrix(germany_hydro_scaled_train)
+
+germany_hydro_x_train_data <- t(sapply(
+  1:(length(germany_hydro_scaled_train) - germany_hydro_lag - germany_hydro_prediction + 1),
+  function(x) germany_hydro_scaled_train[x:(x + germany_hydro_lag - 1), 1]
+))
+
+germany_hydro_x_train_arr <- array(
+  data = as.numeric(unlist(germany_hydro_x_train_data)),
+  dim = c(
+    nrow(germany_hydro_x_train_data),
+    germany_hydro_lag,
+    1
+  )
+)
+
+germany_hydro_y_train_data <- t(sapply(
+  (1 + germany_hydro_lag):(length(germany_hydro_scaled_train) - germany_hydro_prediction + 1),
+  function(x) germany_hydro_scaled_train[x:(x + germany_hydro_prediction - 1)]
+))
+
+germany_hydro_y_train_arr <- array(
+  data = as.numeric(unlist(germany_hydro_y_train_data)),
+  dim = c(
+    nrow(germany_hydro_y_train_data),
+    germany_hydro_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_hydro_x_test <- germany_hydro_data$DE.hydro[(nrow(germany_hydro_scaled_train) - germany_hydro_prediction + 1):nrow(germany_hydro_scaled_train)]
+germany_hydro_x_test_scaled <- (germany_hydro_x_test - germany_hydro_scale_factors[1]) / germany_hydro_scale_factors[2]
+
+germany_hydro_x_pred_arr <- array(
+  data = germany_hydro_x_test_scaled,
+  dim = c(
+    1,
+    germany_hydro_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_hydro_lstm_model <- keras_model_sequential()
+
+germany_hydro_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_hydro_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+germany_hydro_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_hydro_lstm_model %>% fit(
+  x = germany_hydro_x_train_arr,
+  y = germany_hydro_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_hydro_lstm_forecast <- germany_hydro_lstm_model %>%
+  predict(germany_hydro_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_hydro_lstm_forecast <- germany_hydro_lstm_forecast * germany_hydro_scale_factors[2] + germany_hydro_scale_factors[1]
+
+# Create the forecast object
+germany_hydro_fitted <- predict(germany_hydro_lstm_model, germany_hydro_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_hydro_fitted)) > 1) {
+  if (dim(germany_hydro_fitted)[2] > 1) {
+    germany_hydro_fit <- c(germany_hydro_fitted[, 1], germany_hydro_fitted[dim(germany_hydro_fitted)[1], 2:dim(germany_hydro_fitted)[2]])
+  } else {
+    germany_hydro_fit <- germany_hydro_fitted[, 1]
+  }
+} else {
+  germany_hydro_fit <- germany_hydro_fitted
+}
+
+germany_hydro_fitted <- germany_hydro_fit * germany_hydro_scale_factors[2] + germany_hydro_scale_factors[1]
+
+germany_hydro_fitted <- c(rep(NA, germany_hydro_lag), germany_hydro_fitted)
+
+germany_hydro_lstm_forecast <- timetk::tk_ts(germany_hydro_lstm_forecast,
+                                          start = c(2023, 6),
+                                          end = c(2023, 6),
+                                          frequency = 1
+)
+
+germany_hydro_input_ts <- timetk::tk_ts(germany_hydro_data$DE.hydro, 
+                                     start = c(2020, 3), 
+                                     end = c(2023, 5), 
+                                     frequency = 1
+)
+
+germany_hydro_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_hydro_lstm_forecast,
+  x = germany_hydro_input_ts,
+  fitted = germany_hydro_fitted,
+  residuals = as.numeric(germany_hydro_input_ts) - as.numeric(germany_hydro_fitted)
+)
+
+class(germany_hydro_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_hydro_pred <- germany_hydro_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_hydro_pred)
+
+# Determine performance metrics
+lstm_germany_hydro_mape <- mean(abs((germany_hydro_data$DE.hydro - lstm_germany_hydro_pred) / germany_hydro_data$DE.hydro)) * 100
+print(lstm_germany_hydro_mape)
+
+##############################-GERMANY GAS-##############################
+
+# Importing and selecting data for DE.gas
+germany_gas_data <- imp_energy_sources %>% dplyr::select(Date, DE.gas)
+
+# Set the scaling factors for the Germany gas data
+germany_gas_scale_factors <- c(mean(germany_gas_data$DE.gas), sd(germany_gas_data$DE.gas))
+
+# Prepare the training data
+germany_gas_scaled_train <- germany_gas_data %>%
+  dplyr::select(DE.gas) %>%
+  dplyr::mutate(DE.gas = (DE.gas - germany_gas_scale_factors[1]) / germany_gas_scale_factors[2])
+
+germany_gas_prediction <- 1
+germany_gas_lag <- germany_gas_prediction
+
+germany_gas_scaled_train <- as.matrix(germany_gas_scaled_train)
+
+germany_gas_x_train_data <- t(sapply(
+  1:(length(germany_gas_scaled_train) - germany_gas_lag - germany_gas_prediction + 1),
+  function(x) germany_gas_scaled_train[x:(x + germany_gas_lag - 1), 1]
+))
+
+germany_gas_x_train_arr <- array(
+  data = as.numeric(unlist(germany_gas_x_train_data)),
+  dim = c(
+    nrow(germany_gas_x_train_data),
+    germany_gas_lag,
+    1
+  )
+)
+
+germany_gas_y_train_data <- t(sapply(
+  (1 + germany_gas_lag):(length(germany_gas_scaled_train) - germany_gas_prediction + 1),
+  function(x) germany_gas_scaled_train[x:(x + germany_gas_prediction - 1)]
+))
+
+germany_gas_y_train_arr <- array(
+  data = as.numeric(unlist(germany_gas_y_train_data)),
+  dim = c(
+    nrow(germany_gas_y_train_data),
+    germany_gas_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_gas_x_test <- germany_gas_data$DE.gas[(nrow(germany_gas_scaled_train) - germany_gas_prediction + 1):nrow(germany_gas_scaled_train)]
+germany_gas_x_test_scaled <- (germany_gas_x_test - germany_gas_scale_factors[1]) / germany_gas_scale_factors[2]
+
+germany_gas_x_pred_arr <- array(
+  data = germany_gas_x_test_scaled,
+  dim = c(
+    1,
+    germany_gas_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_gas_lstm_model <- keras_model_sequential()
+
+germany_gas_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_gas_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+germany_gas_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_gas_lstm_model %>% fit(
+  x = germany_gas_x_train_arr,
+  y = germany_gas_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_gas_lstm_forecast <- germany_gas_lstm_model %>%
+  predict(germany_gas_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_gas_lstm_forecast <- germany_gas_lstm_forecast * germany_gas_scale_factors[2] + germany_gas_scale_factors[1]
+
+# Create the forecast object
+germany_gas_fitted <- predict(germany_gas_lstm_model, germany_gas_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_gas_fitted)) > 1) {
+  if (dim(germany_gas_fitted)[2] > 1) {
+    germany_gas_fit <- c(germany_gas_fitted[, 1], germany_gas_fitted[dim(germany_gas_fitted)[1], 2:dim(germany_gas_fitted)[2]])
+  } else {
+    germany_gas_fit <- germany_gas_fitted[, 1]
+  }
+} else {
+  germany_gas_fit <- germany_gas_fitted
+}
+
+germany_gas_fitted <- germany_gas_fit * germany_gas_scale_factors[2] + germany_gas_scale_factors[1]
+
+germany_gas_fitted <- c(rep(NA, germany_gas_lag), germany_gas_fitted)
+
+germany_gas_lstm_forecast <- timetk::tk_ts(germany_gas_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+germany_gas_input_ts <- timetk::tk_ts(germany_gas_data$DE.gas, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+germany_gas_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_gas_lstm_forecast,
+  x = germany_gas_input_ts,
+  fitted = germany_gas_fitted,
+  residuals = as.numeric(germany_gas_input_ts) - as.numeric(germany_gas_fitted)
+)
+
+class(germany_gas_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_gas_pred <- germany_gas_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_gas_pred)
+
+# Determine performance metrics
+lstm_germany_gas_mape <- mean(abs((germany_gas_data$DE.gas - lstm_germany_gas_pred) / germany_gas_data$DE.gas)) * 100
+print(lstm_germany_gas_mape)
+
+##############################-GERMANY OIL-##############################
+
+# Importing and selecting data for DE.oil
+germany_oil_data <- imp_energy_sources %>% dplyr::select(Date, DE.oil)
+
+# Set the scaling factors for the Germany oil data
+germany_oil_scale_factors <- c(mean(germany_oil_data$DE.oil), sd(germany_oil_data$DE.oil))
+
+# Prepare the training data
+germany_oil_scaled_train <- germany_oil_data %>%
+  dplyr::select(DE.oil) %>%
+  dplyr::mutate(DE.oil = (DE.oil - germany_oil_scale_factors[1]) / germany_oil_scale_factors[2])
+
+germany_oil_prediction <- 1
+germany_oil_lag <- germany_oil_prediction
+
+germany_oil_scaled_train <- as.matrix(germany_oil_scaled_train)
+
+germany_oil_x_train_data <- t(sapply(
+  1:(length(germany_oil_scaled_train) - germany_oil_lag - germany_oil_prediction + 1),
+  function(x) germany_oil_scaled_train[x:(x + germany_oil_lag - 1), 1]
+))
+
+germany_oil_x_train_arr <- array(
+  data = as.numeric(unlist(germany_oil_x_train_data)),
+  dim = c(
+    nrow(germany_oil_x_train_data),
+    germany_oil_lag,
+    1
+  )
+)
+
+germany_oil_y_train_data <- t(sapply(
+  (1 + germany_oil_lag):(length(germany_oil_scaled_train) - germany_oil_prediction + 1),
+  function(x) germany_oil_scaled_train[x:(x + germany_oil_prediction - 1)]
+))
+
+germany_oil_y_train_arr <- array(
+  data = as.numeric(unlist(germany_oil_y_train_data)),
+  dim = c(
+    nrow(germany_oil_y_train_data),
+    germany_oil_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_oil_x_test <- germany_oil_data$DE.oil[(nrow(germany_oil_scaled_train) - germany_oil_prediction + 1):nrow(germany_oil_scaled_train)]
+germany_oil_x_test_scaled <- (germany_oil_x_test - germany_oil_scale_factors[1]) / germany_oil_scale_factors[2]
+
+germany_oil_x_pred_arr <- array(
+  data = germany_oil_x_test_scaled,
+  dim = c(
+    1,
+    germany_oil_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_oil_lstm_model <- keras_model_sequential()
+
+germany_oil_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_oil_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+germany_oil_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_oil_lstm_model %>% fit(
+  x = germany_oil_x_train_arr,
+  y = germany_oil_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_oil_lstm_forecast <- germany_oil_lstm_model %>%
+  predict(germany_oil_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_oil_lstm_forecast <- germany_oil_lstm_forecast * germany_oil_scale_factors[2] + germany_oil_scale_factors[1]
+
+# Create the forecast object
+germany_oil_fitted <- predict(germany_oil_lstm_model, germany_oil_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_oil_fitted)) > 1) {
+  if (dim(germany_oil_fitted)[2] > 1) {
+    germany_oil_fit <- c(germany_oil_fitted[, 1], germany_oil_fitted[dim(germany_oil_fitted)[1], 2:dim(germany_oil_fitted)[2]])
+  } else {
+    germany_oil_fit <- germany_oil_fitted[, 1]
+  }
+} else {
+  germany_oil_fit <- germany_oil_fitted
+}
+
+germany_oil_fitted <-germany_oil_fit * germany_oil_scale_factors[2] + germany_oil_scale_factors[1]
+
+germany_oil_fitted <- c(rep(NA, germany_oil_lag), germany_oil_fitted)
+
+germany_oil_lstm_forecast <- timetk::tk_ts(germany_oil_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+germany_oil_input_ts <- timetk::tk_ts(germany_oil_data$DE.oil, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+germany_oil_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_oil_lstm_forecast,
+  x = germany_oil_input_ts,
+  fitted = germany_oil_fitted,
+  residuals = as.numeric(germany_oil_input_ts) - as.numeric(germany_oil_fitted)
+)
+
+class(germany_oil_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_oil_pred <- germany_oil_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_oil_pred)
+
+# Determine performance metrics
+lstm_germany_oil_mape <- mean(abs((germany_oil_data$DE.oil - lstm_germany_oil_pred) / germany_oil_data$DE.oil)) * 100
+print(lstm_germany_oil_mape)
+
+##############################-GERMANY COAL-##############################
+
+# Importing and selecting data for DE.coal
+germany_coal_data <- imp_energy_sources %>% dplyr::select(Date, DE.coal)
+
+# Set the scaling factors for the Germany coal data
+germany_coal_scale_factors <- c(mean(germany_coal_data$DE.coal), sd(germany_coal_data$DE.coal))
+
+# Prepare the training data
+germany_coal_scaled_train <- germany_coal_data %>%
+  dplyr::select(DE.coal) %>%
+  dplyr::mutate(DE.coal = (DE.coal - germany_coal_scale_factors[1]) / germany_coal_scale_factors[2])
+
+germany_coal_prediction <- 1
+germany_coal_lag <- germany_coal_prediction
+
+germany_coal_scaled_train <- as.matrix(germany_coal_scaled_train)
+
+germany_coal_x_train_data <- t(sapply(
+  1:(length(germany_coal_scaled_train) - germany_coal_lag - germany_coal_prediction + 1),
+  function(x) germany_coal_scaled_train[x:(x + germany_coal_lag - 1), 1]
+))
+
+germany_coal_x_train_arr <- array(
+  data = as.numeric(unlist(germany_coal_x_train_data)),
+  dim = c(
+    nrow(germany_coal_x_train_data),
+    germany_coal_lag,
+    1
+  )
+)
+
+germany_coal_y_train_data <- t(sapply(
+  (1 + germany_coal_lag):(length(germany_coal_scaled_train) - germany_coal_prediction + 1),
+  function(x) germany_coal_scaled_train[x:(x + germany_coal_prediction - 1)]
+))
+
+germany_coal_y_train_arr <- array(
+  data = as.numeric(unlist(germany_coal_y_train_data)),
+  dim = c(
+    nrow(germany_coal_y_train_data),
+    germany_coal_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_coal_x_test <- germany_coal_data$DE.coal[(nrow(germany_coal_scaled_train) - germany_coal_prediction + 1):nrow(germany_coal_scaled_train)]
+germany_coal_x_test_scaled <- (germany_coal_x_test - germany_coal_scale_factors[1]) / germany_coal_scale_factors[2]
+
+germany_coal_x_pred_arr <- array(
+  data = germany_coal_x_test_scaled,
+  dim = c(
+    1,
+    germany_coal_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_coal_lstm_model <- keras_model_sequential()
+
+germany_coal_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_coal_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+germany_coal_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_coal_lstm_model %>% fit(
+  x = germany_coal_x_train_arr,
+  y = germany_coal_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_coal_lstm_forecast <- germany_coal_lstm_model %>%
+  predict(germany_coal_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_coal_lstm_forecast <- germany_coal_lstm_forecast * germany_coal_scale_factors[2] + germany_coal_scale_factors[1]
+
+# Create the forecast object
+germany_coal_fitted <- predict(germany_coal_lstm_model, germany_coal_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_coal_fitted)) > 1) {
+  if (dim(germany_coal_fitted)[2] > 1) {
+    germany_coal_fit <- c(germany_coal_fitted[, 1], germany_coal_fitted[dim(germany_coal_fitted)[1], 2:dim(germany_coal_fitted)[2]])
+  } else {
+    germany_coal_fit <- germany_coal_fitted[, 1]
+  }
+} else {
+  germany_coal_fit <- germany_coal_fitted
+}
+
+germany_coal_fitted <-germany_coal_fit * germany_coal_scale_factors[2] + germany_coal_scale_factors[1]
+
+germany_coal_fitted <- c(rep(NA, germany_coal_lag), germany_coal_fitted)
+
+germany_coal_lstm_forecast <- timetk::tk_ts(germany_coal_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+germany_coal_input_ts <- timetk::tk_ts(germany_coal_data$DE.coal, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+germany_coal_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_coal_lstm_forecast,
+  x = germany_coal_input_ts,
+  fitted = germany_coal_fitted,
+  residuals = as.numeric(germany_coal_input_ts) - as.numeric(germany_coal_fitted)
+)
+
+class(germany_coal_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_coal_pred <- germany_coal_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_coal_pred)
+
+# Determine performance metrics
+lstm_germany_coal_mape <- mean(abs((germany_coal_data$DE.coal - lstm_germany_coal_pred) / germany_coal_data$DE.coal)) * 100
+print(lstm_germany_coal_mape)
+
+##############################-GERMANY NUCLEAR-##############################
+
+# Importing and selecting data for DE.nuclear
+germany_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, DE.nuclear)
+
+# Set the scaling factors for the Germany nuclear data
+germany_nuclear_scale_factors <- c(mean(germany_nuclear_data$DE.nuclear), sd(germany_nuclear_data$DE.nuclear))
+
+# Prepare the training data
+germany_nuclear_scaled_train <- germany_nuclear_data %>%
+  dplyr::select(DE.nuclear) %>%
+  dplyr::mutate(DE.nuclear = (DE.nuclear - germany_nuclear_scale_factors[1]) / germany_nuclear_scale_factors[2])
+
+germany_nuclear_prediction <- 1
+germany_nuclear_lag <- germany_nuclear_prediction
+
+germany_nuclear_scaled_train <- as.matrix(germany_nuclear_scaled_train)
+
+germany_nuclear_x_train_data <- t(sapply(
+  1:(length(germany_nuclear_scaled_train) - germany_nuclear_lag - germany_nuclear_prediction + 1),
+  function(x) germany_nuclear_scaled_train[x:(x + germany_nuclear_lag - 1), 1]
+))
+
+germany_nuclear_x_train_arr <- array(
+  data = as.numeric(unlist(germany_nuclear_x_train_data)),
+  dim = c(
+    nrow(germany_nuclear_x_train_data),
+    germany_nuclear_lag,
+    1
+  )
+)
+
+germany_nuclear_y_train_data <- t(sapply(
+  (1 + germany_nuclear_lag):(length(germany_nuclear_scaled_train) - germany_nuclear_prediction + 1),
+  function(x) germany_nuclear_scaled_train[x:(x + germany_nuclear_prediction - 1)]
+))
+
+germany_nuclear_y_train_arr <- array(
+  data = as.numeric(unlist(germany_nuclear_y_train_data)),
+  dim = c(
+    nrow(germany_nuclear_y_train_data),
+    germany_nuclear_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_nuclear_x_test <- germany_nuclear_data$DE.nuclear[(nrow(germany_nuclear_scaled_train) - germany_nuclear_prediction + 1):nrow(germany_nuclear_scaled_train)]
+germany_nuclear_x_test_scaled <- (germany_nuclear_x_test - germany_nuclear_scale_factors[1]) / germany_nuclear_scale_factors[2]
+
+germany_nuclear_x_pred_arr <- array(
+  data = germany_nuclear_x_test_scaled,
+  dim = c(
+    1,
+    germany_nuclear_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_nuclear_lstm_model <- keras_model_sequential()
+
+germany_nuclear_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_nuclear_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+germany_nuclear_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_nuclear_lstm_model %>% fit(
+  x = germany_nuclear_x_train_arr,
+  y = germany_nuclear_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_nuclear_lstm_forecast <- germany_nuclear_lstm_model %>%
+  predict(germany_nuclear_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_nuclear_lstm_forecast <- germany_nuclear_lstm_forecast * germany_nuclear_scale_factors[2] + germany_nuclear_scale_factors[1]
+
+# Create the forecast object
+germany_nuclear_fitted <- predict(germany_nuclear_lstm_model, germany_nuclear_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_nuclear_fitted)) > 1) {
+  if (dim(germany_nuclear_fitted)[2] > 1) {
+    germany_nuclear_fit <- c(germany_nuclear_fitted[, 1], germany_nuclear_fitted[dim(germany_nuclear_fitted)[1], 2:dim(germany_nuclear_fitted)[2]])
+  } else {
+    germany_nuclear_fit <- germany_nuclear_fitted[, 1]
+  }
+} else {
+  germany_nuclear_fit <- germany_nuclear_fitted
+}
+
+germany_nuclear_fitted <- germany_nuclear_fit * germany_nuclear_scale_factors[2] + germany_nuclear_scale_factors[1]
+
+germany_nuclear_fitted <- c(rep(NA, germany_nuclear_lag), germany_nuclear_fitted)
+
+germany_nuclear_lstm_forecast <- timetk::tk_ts(germany_nuclear_lstm_forecast,
+                                            start = c(2023, 6),
+                                            end = c(2023, 6),
+                                            frequency = 1
+)
+
+germany_nuclear_input_ts <- timetk::tk_ts(germany_nuclear_data$DE.nuclear, 
+                                       start = c(2020, 3), 
+                                       end = c(2023, 5), 
+                                       frequency = 1
+)
+
+germany_nuclear_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_nuclear_lstm_forecast,
+  x = germany_nuclear_input_ts,
+  fitted = germany_nuclear_fitted,
+  residuals = as.numeric(germany_nuclear_input_ts) - as.numeric(germany_nuclear_fitted)
+)
+
+class(germany_nuclear_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_nuclear_pred <- germany_nuclear_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_nuclear_pred)
+
+# Determine performance metrics
+lstm_germany_nuclear_mape <- mean(abs((germany_nuclear_data$DE.nuclear - lstm_germany_nuclear_pred) / germany_nuclear_data$DE.nuclear)) * 100
+print(lstm_germany_nuclear_mape)
+
+##############################-GERMANY SOLAR-##############################
+
+# Importing and selecting data for DE.solar
+germany_solar_data <- imp_energy_sources %>% dplyr::select(Date, DE.solar)
+
+# Set the scaling factors for the Germany solar data
+germany_solar_scale_factors <- c(mean(germany_solar_data$DE.solar), sd(germany_solar_data$DE.solar))
+
+# Prepare the training data
+germany_solar_scaled_train <- germany_solar_data %>%
+  dplyr::select(DE.solar) %>%
+  dplyr::mutate(DE.solar = (DE.solar - germany_solar_scale_factors[1]) / germany_solar_scale_factors[2])
+
+germany_solar_prediction <- 1
+germany_solar_lag <- germany_solar_prediction
+
+germany_solar_scaled_train <- as.matrix(germany_solar_scaled_train)
+
+germany_solar_x_train_data <- t(sapply(
+  1:(length(germany_solar_scaled_train) - germany_solar_lag - germany_solar_prediction + 1),
+  function(x) germany_solar_scaled_train[x:(x + germany_solar_lag - 1), 1]
+))
+
+germany_solar_x_train_arr <- array(
+  data = as.numeric(unlist(germany_solar_x_train_data)),
+  dim = c(
+    nrow(germany_solar_x_train_data),
+    germany_solar_lag,
+    1
+  )
+)
+
+germany_solar_y_train_data <- t(sapply(
+  (1 + germany_solar_lag):(length(germany_solar_scaled_train) - germany_solar_prediction + 1),
+  function(x) germany_solar_scaled_train[x:(x + germany_solar_prediction - 1)]
+))
+
+germany_solar_y_train_arr <- array(
+  data = as.numeric(unlist(germany_solar_y_train_data)),
+  dim = c(
+    nrow(germany_solar_y_train_data),
+    germany_solar_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_solar_x_test <- germany_solar_data$DE.solar[(nrow(germany_solar_scaled_train) - germany_solar_prediction + 1):nrow(germany_solar_scaled_train)]
+germany_solar_x_test_scaled <- (germany_solar_x_test - germany_solar_scale_factors[1]) / germany_solar_scale_factors[2]
+
+germany_solar_x_pred_arr <- array(
+  data = germany_solar_x_test_scaled,
+  dim = c(
+    1,
+    germany_solar_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_solar_lstm_model <- keras_model_sequential()
+
+germany_solar_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_solar_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+germany_solar_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_solar_lstm_model %>% fit(
+  x = germany_solar_x_train_arr,
+  y = germany_solar_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_solar_lstm_forecast <- germany_solar_lstm_model %>%
+  predict(germany_solar_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_solar_lstm_forecast <- germany_solar_lstm_forecast *germany_solar_scale_factors[2] + germany_solar_scale_factors[1]
+
+# Create the forecast object
+germany_solar_fitted <- predict(germany_solar_lstm_model, germany_solar_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_solar_fitted)) > 1) {
+  if (dim(germany_solar_fitted)[2] > 1) {
+    germany_solar_fit <- c(germany_solar_fitted[, 1], germany_solar_fitted[dim(germany_solar_fitted)[1], 2:dim(germany_solar_fitted)[2]])
+  } else {
+    germany_solar_fit <- germany_solar_fitted[, 1]
+  }
+} else {
+  germany_solar_fit <- germany_solar_fitted
+}
+
+germany_solar_fitted <- germany_solar_fit * germany_solar_scale_factors[2] + germany_solar_scale_factors[1]
+
+germany_solar_fitted <- c(rep(NA, germany_solar_lag), germany_solar_fitted)
+
+germany_solar_lstm_forecast <- timetk::tk_ts(germany_solar_lstm_forecast,
+                                               start = c(2023, 6),
+                                               end = c(2023, 6),
+                                               frequency = 1
+)
+
+germany_solar_input_ts <- timetk::tk_ts(germany_solar_data$DE.solar, 
+                                          start = c(2020, 3), 
+                                          end = c(2023, 5), 
+                                          frequency = 1
+)
+
+germany_solar_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_solar_lstm_forecast,
+  x = germany_solar_input_ts,
+  fitted = germany_solar_fitted,
+  residuals = as.numeric(germany_solar_input_ts) - as.numeric(germany_solar_fitted)
+)
+
+class(germany_solar_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_solar_pred <- germany_solar_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_solar_pred)
+
+# Determine performance metrics
+lstm_germany_solar_mape <- mean(abs((germany_solar_data$DE.solar - lstm_germany_solar_pred) / germany_solar_data$DE.solar)) * 100
+print(lstm_germany_solar_mape)
+
+##############################-GERMANY WIND-##############################
+
+# Importing and selecting data for DE.wind
+germany_wind_data <- imp_energy_sources %>% dplyr::select(Date, DE.wind)
+
+# Set the scaling factors for the Germany wind data
+germany_wind_scale_factors <- c(mean(germany_wind_data$DE.wind), sd(germany_wind_data$DE.wind))
+
+# Prepare the training data
+germany_wind_scaled_train <- germany_wind_data %>%
+  dplyr::select(DE.wind) %>%
+  dplyr::mutate(DE.wind = (DE.wind - germany_wind_scale_factors[1]) / germany_wind_scale_factors[2])
+
+germany_wind_prediction <- 1
+germany_wind_lag <- germany_wind_prediction
+
+germany_wind_scaled_train <- as.matrix(germany_wind_scaled_train)
+
+germany_wind_x_train_data <- t(sapply(
+  1:(length(germany_wind_scaled_train) - germany_wind_lag - germany_wind_prediction + 1),
+  function(x) germany_wind_scaled_train[x:(x + germany_wind_lag - 1), 1]
+))
+
+germany_wind_x_train_arr <- array(
+  data = as.numeric(unlist(germany_wind_x_train_data)),
+  dim = c(
+    nrow(germany_wind_x_train_data),
+    germany_wind_lag,
+    1
+  )
+)
+
+germany_wind_y_train_data <- t(sapply(
+  (1 + germany_wind_lag):(length(germany_wind_scaled_train) - germany_wind_prediction + 1),
+  function(x) germany_wind_scaled_train[x:(x + germany_wind_prediction - 1)]
+))
+
+germany_wind_y_train_arr <- array(
+  data = as.numeric(unlist(germany_wind_y_train_data)),
+  dim = c(
+    nrow(germany_wind_y_train_data),
+    germany_wind_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+germany_wind_x_test <- germany_wind_data$DE.wind[(nrow(germany_wind_scaled_train) - germany_wind_prediction + 1):nrow(germany_wind_scaled_train)]
+germany_wind_x_test_scaled <- (germany_wind_x_test - germany_wind_scale_factors[1]) / germany_wind_scale_factors[2]
+
+germany_wind_x_pred_arr <- array(
+  data = germany_wind_x_test_scaled,
+  dim = c(
+    1,
+    germany_wind_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+germany_wind_lstm_model <- keras_model_sequential()
+
+germany_wind_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, germany_wind_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+germany_wind_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+germany_wind_lstm_model %>% fit(
+  x = germany_wind_x_train_arr,
+  y = germany_wind_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+germany_wind_lstm_forecast <- germany_wind_lstm_model %>%
+  predict(germany_wind_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+germany_wind_lstm_forecast <- germany_wind_lstm_forecast * germany_wind_scale_factors[2] + germany_wind_scale_factors[1]
+
+# Create the forecast object
+germany_wind_fitted <- predict(germany_wind_lstm_model, germany_wind_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(germany_wind_fitted)) > 1) {
+  if (dim(germany_wind_fitted)[2] > 1) {
+    germany_wind_fit <- c(germany_wind_fitted[, 1], germany_wind_fitted[dim(germany_wind_fitted)[1], 2:dim(ggermany_wind_fitted)[2]])
+  } else {
+    germany_wind_fit <- germany_wind_fitted[, 1]
+  }
+} else {
+  germany_wind_fit <- germany_wind_fitted
+}
+
+germany_wind_fitted <- germany_wind_fit * germany_wind_scale_factors[2] + germany_wind_scale_factors[1]
+
+germany_wind_fitted <- c(rep(NA, germany_wind_lag), germany_wind_fitted)
+
+germany_wind_lstm_forecast <- timetk::tk_ts(germany_wind_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+germany_wind_input_ts <- timetk::tk_ts(germany_wind_data$DE.wind, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+germany_wind_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = germany_wind_lstm_forecast,
+  x = germany_wind_input_ts,
+  fitted = germany_wind_fitted,
+  residuals = as.numeric(germany_wind_input_ts) - as.numeric(germany_wind_fitted)
+)
+
+class(germany_wind_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_germany_wind_pred <- germany_wind_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_germany_wind_pred)
+
+# Determine performance metrics
+lstm_germany_wind_mape <- mean(abs((germany_wind_data$DE.wind - lstm_germany_wind_pred) / germany_wind_data$DE.wind)) * 100
+print(lstm_germany_wind_mape)
+
+##############################-FRANCE HYDRO-##############################
+
+# Importing and selecting data for FR.hydro
+france_hydro_data <- imp_energy_sources %>% dplyr::select(Date, FR.hydro)
+
+# Set the scaling factors for the France hydro data
+france_hydro_scale_factors <- c(mean(france_hydro_data$FR.hydro), sd(france_hydro_data$FR.hydro))
+
+# Prepare the training data
+france_hydro_scaled_train <- france_hydro_data %>%
+  dplyr::select(FR.hydro) %>%
+  dplyr::mutate(FR.hydro = (FR.hydro - france_hydro_scale_factors[1]) / france_hydro_scale_factors[2])
+
+france_hydro_prediction <- 1
+france_hydro_lag <- france_hydro_prediction
+
+france_hydro_scaled_train <- as.matrix(france_hydro_scaled_train)
+
+france_hydro_x_train_data <- t(sapply(
+  1:(length(france_hydro_scaled_train) - france_hydro_lag - france_hydro_prediction + 1),
+  function(x) france_hydro_scaled_train[x:(x + france_hydro_lag - 1), 1]
+))
+
+france_hydro_x_train_arr <- array(
+  data = as.numeric(unlist(france_hydro_x_train_data)),
+  dim = c(
+    nrow(france_hydro_x_train_data),
+    france_hydro_lag,
+    1
+  )
+)
+
+france_hydro_y_train_data <- t(sapply(
+  (1 + france_hydro_lag):(length(france_hydro_scaled_train) - france_hydro_prediction + 1),
+  function(x) france_hydro_scaled_train[x:(x + france_hydro_prediction - 1)]
+))
+
+france_hydro_y_train_arr <- array(
+  data = as.numeric(unlist(france_hydro_y_train_data)),
+  dim = c(
+    nrow(france_hydro_y_train_data),
+    france_hydro_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_hydro_x_test <- france_hydro_data$FR.hydro[(nrow(france_hydro_scaled_train) - france_hydro_prediction + 1):nrow(france_hydro_scaled_train)]
+france_hydro_x_test_scaled <- (france_hydro_x_test - france_hydro_scale_factors[1]) / france_hydro_scale_factors[2]
+
+france_hydro_x_pred_arr <- array(
+  data = france_hydro_x_test_scaled,
+  dim = c(
+    1,
+    france_hydro_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_hydro_lstm_model <- keras_model_sequential()
+
+france_hydro_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_hydro_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+france_hydro_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_hydro_lstm_model %>% fit(
+  x = france_hydro_x_train_arr,
+  y = france_hydro_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_hydro_lstm_forecast <- france_hydro_lstm_model %>%
+  predict(france_hydro_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_hydro_lstm_forecast <- france_hydro_lstm_forecast * france_hydro_scale_factors[2] + france_hydro_scale_factors[1]
+
+# Create the forecast object
+france_hydro_fitted <- predict(france_hydro_lstm_model, france_hydro_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_hydro_fitted)) > 1) {
+  if (dim(france_hydro_fitted)[2] > 1) {
+    france_hydro_fit <- c(france_hydro_fitted[, 1], france_hydro_fitted[dim(france_hydro_fitted)[1], 2:dim(france_hydro_fitted)[2]])
+  } else {
+    france_hydro_fit <- france_hydro_fitted[, 1]
+  }
+} else {
+  france_hydro_fit <- france_hydro_fitted
+}
+
+france_hydro_fitted <- france_hydro_fit * france_hydro_scale_factors[2] + france_hydro_scale_factors[1]
+
+france_hydro_fitted <- c(rep(NA, france_hydro_lag), france_hydro_fitted)
+
+france_hydro_lstm_forecast <- timetk::tk_ts(france_hydro_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+france_hydro_input_ts <- timetk::tk_ts(france_hydro_data$FR.hydro, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+france_hydro_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_hydro_lstm_forecast,
+  x = france_hydro_input_ts,
+  fitted = france_hydro_fitted,
+  residuals = as.numeric(france_hydro_input_ts) - as.numeric(france_hydro_fitted)
+)
+
+class(france_hydro_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_hydro_pred <- france_hydro_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_hydro_pred)
+
+# Determine performance metrics
+lstm_france_hydro_mape <- mean(abs((france_hydro_data$FR.hydro - lstm_france_hydro_pred) / france_hydro_data$FR.hydro)) * 100
+print(lstm_france_hydro_mape)
+
+##############################-FRANCE GAS-##############################
+
+# Importing and selecting data for FR.gas
+france_gas_data <- imp_energy_sources %>% dplyr::select(Date, FR.gas)
+
+# Set the scaling factors for the France gas data
+france_gas_scale_factors <- c(mean(france_gas_data$FR.gas), sd(france_gas_data$FR.gas))
+
+# Prepare the training data
+france_gas_scaled_train <- france_gas_data %>%
+  dplyr::select(FR.gas) %>%
+  dplyr::mutate(FR.gas = (FR.gas - france_gas_scale_factors[1]) / france_gas_scale_factors[2])
+
+france_gas_prediction <- 1
+france_gas_lag <- france_gas_prediction
+
+france_gas_scaled_train <- as.matrix(france_gas_scaled_train)
+
+france_gas_x_train_data <- t(sapply(
+  1:(length(france_gas_scaled_train) - france_gas_lag - france_gas_prediction + 1),
+  function(x) france_gas_scaled_train[x:(x + france_gas_lag - 1), 1]
+))
+
+france_gas_x_train_arr <- array(
+  data = as.numeric(unlist(france_gas_x_train_data)),
+  dim = c(
+    nrow(france_gas_x_train_data),
+    france_gas_lag,
+    1
+  )
+)
+
+france_gas_y_train_data <- t(sapply(
+  (1 + france_gas_lag):(length(france_gas_scaled_train) - france_gas_prediction + 1),
+  function(x) france_gas_scaled_train[x:(x + france_gas_prediction - 1)]
+))
+
+france_gas_y_train_arr <- array(
+  data = as.numeric(unlist(france_gas_y_train_data)),
+  dim = c(
+    nrow(france_gas_y_train_data),
+    france_gas_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_gas_x_test <- france_gas_data$FR.gas[(nrow(france_gas_scaled_train) - france_gas_prediction + 1):nrow(france_gas_scaled_train)]
+france_gas_x_test_scaled <- (france_gas_x_test - france_gas_scale_factors[1]) / france_gas_scale_factors[2]
+
+france_gas_x_pred_arr <- array(
+  data = france_gas_x_test_scaled,
+  dim = c(
+    1,
+    france_gas_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_gas_lstm_model <- keras_model_sequential()
+
+france_gas_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_gas_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+france_gas_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_gas_lstm_model %>% fit(
+  x = france_gas_x_train_arr,
+  y = france_gas_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_gas_lstm_forecast <- france_gas_lstm_model %>%
+  predict(france_gas_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_gas_lstm_forecast <- france_gas_lstm_forecast * france_gas_scale_factors[2] + france_gas_scale_factors[1]
+
+# Create the forecast object
+france_gas_fitted <- predict(france_gas_lstm_model, france_gas_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_gas_fitted)) > 1) {
+  if (dim(france_gas_fitted)[2] > 1) {
+    france_gas_fit <- c(france_gas_fitted[, 1], france_gas_fitted[dim(france_gas_fitted)[1], 2:dim(france_gas_fitted)[2]])
+  } else {
+    france_gas_fit <- france_gas_fitted[, 1]
+  }
+} else {
+  france_gas_fit <- france_gas_fitted
+}
+
+france_gas_fitted <- france_gas_fit * france_gas_scale_factors[2] + france_gas_scale_factors[1]
+
+france_gas_fitted <- c(rep(NA, france_gas_lag), france_gas_fitted)
+
+france_gas_lstm_forecast <- timetk::tk_ts(france_gas_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+france_gas_input_ts <- timetk::tk_ts(france_gas_data$FR.gas, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+france_gas_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_gas_lstm_forecast,
+  x = france_gas_input_ts,
+  fitted = france_gas_fitted,
+  residuals = as.numeric(france_gas_input_ts) - as.numeric(france_gas_fitted)
+)
+
+class(france_gas_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_gas_pred <- france_gas_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_gas_pred)
+
+# Determine performance metrics
+lstm_france_gas_mape <- mean(abs((france_gas_data$FR.gas - lstm_france_gas_pred) / france_gas_data$FR.gas)) * 100
+print(lstm_france_gas_mape)
+
+##############################-FRANCE OIL-##############################
+
+# Importing and selecting data for FR.oil
+france_oil_data <- imp_energy_sources %>% dplyr::select(Date, FR.oil)
+
+# Set the scaling factors for the Germany oil data
+france_oil_scale_factors <- c(mean(france_oil_data$FR.oil), sd(france_oil_data$FR.oil))
+
+# Prepare the training data
+france_oil_scaled_train <- france_oil_data %>%
+  dplyr::select(FR.oil) %>%
+  dplyr::mutate(FR.oil = (FR.oil - france_oil_scale_factors[1]) / france_oil_scale_factors[2])
+
+france_oil_prediction <- 1
+france_oil_lag <- france_oil_prediction
+
+france_oil_scaled_train <- as.matrix(france_oil_scaled_train)
+
+france_oil_x_train_data <- t(sapply(
+  1:(length(france_oil_scaled_train) - france_oil_lag - france_oil_prediction + 1),
+  function(x) france_oil_scaled_train[x:(x + france_oil_lag - 1), 1]
+))
+
+france_oil_x_train_arr <- array(
+  data = as.numeric(unlist(france_oil_x_train_data)),
+  dim = c(
+    nrow(france_oil_x_train_data),
+    france_oil_lag,
+    1
+  )
+)
+
+france_oil_y_train_data <- t(sapply(
+  (1 + france_oil_lag):(length(france_oil_scaled_train) - france_oil_prediction + 1),
+  function(x) france_oil_scaled_train[x:(x + france_oil_prediction - 1)]
+))
+
+france_oil_y_train_arr <- array(
+  data = as.numeric(unlist(france_oil_y_train_data)),
+  dim = c(
+    nrow(france_oil_y_train_data),
+    france_oil_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_oil_x_test <- france_oil_data$FR.oil[(nrow(france_oil_scaled_train) - france_oil_prediction + 1):nrow(france_oil_scaled_train)]
+france_oil_x_test_scaled <- (france_oil_x_test - france_oil_scale_factors[1]) / france_oil_scale_factors[2]
+
+france_oil_x_pred_arr <- array(
+  data = france_oil_x_test_scaled,
+  dim = c(
+    1,
+    france_oil_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_oil_lstm_model <- keras_model_sequential()
+
+france_oil_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_oil_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+france_oil_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_oil_lstm_model %>% fit(
+  x = france_oil_x_train_arr,
+  y = france_oil_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_oil_lstm_forecast <- france_oil_lstm_model %>%
+  predict(france_oil_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_oil_lstm_forecast <- france_oil_lstm_forecast * france_oil_scale_factors[2] + france_oil_scale_factors[1]
+
+# Create the forecast object
+france_oil_fitted <- predict(france_oil_lstm_model, france_oil_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_oil_fitted)) > 1) {
+  if (dim(france_oil_fitted)[2] > 1) {
+    france_oil_fit <- c(france_oil_fitted[, 1], france_oil_fitted[dim(france_oil_fitted)[1], 2:dim(france_oil_fitted)[2]])
+  } else {
+    france_oil_fit <- france_oil_fitted[, 1]
+  }
+} else {
+  france_oil_fit <- france_oil_fitted
+}
+
+france_oil_fitted <-france_oil_fit * france_oil_scale_factors[2] + france_oil_scale_factors[1]
+
+france_oil_fitted <- c(rep(NA, france_oil_lag), france_oil_fitted)
+
+france_oil_lstm_forecast <- timetk::tk_ts(france_oil_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+france_oil_input_ts <- timetk::tk_ts(france_oil_data$FR.oil, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+france_oil_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_oil_lstm_forecast,
+  x = france_oil_input_ts,
+  fitted = france_oil_fitted,
+  residuals = as.numeric(france_oil_input_ts) - as.numeric(france_oil_fitted)
+)
+
+class(france_oil_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_oil_pred <- france_oil_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_oil_pred)
+
+# Determine performance metrics
+lstm_france_oil_mape <- mean(abs((france_oil_data$FR.oil - lstm_france_oil_pred) / france_oil_data$FR.oil)) * 100
+print(lstm_france_oil_mape)
+
+##############################-FRANCE COAL-##############################
+
+# Importing and selecting data for FR.coal
+france_coal_data <- imp_energy_sources %>% dplyr::select(Date, FR.coal)
+
+# Set the scaling factors for the Germany coal data
+france_coal_scale_factors <- c(mean(france_coal_data$FR.coal), sd(france_coal_data$FR.coal))
+
+# Prepare the training data
+france_coal_scaled_train <- france_coal_data %>%
+  dplyr::select(FR.coal) %>%
+  dplyr::mutate(FR.coal = (FR.coal - france_coal_scale_factors[1]) / france_coal_scale_factors[2])
+
+france_coal_prediction <- 1
+france_coal_lag <- france_coal_prediction
+
+france_coal_scaled_train <- as.matrix(france_coal_scaled_train)
+
+france_coal_x_train_data <- t(sapply(
+  1:(length(france_coal_scaled_train) - france_coal_lag - france_coal_prediction + 1),
+  function(x) france_coal_scaled_train[x:(x + france_coal_lag - 1), 1]
+))
+
+france_coal_x_train_arr <- array(
+  data = as.numeric(unlist(france_coal_x_train_data)),
+  dim = c(
+    nrow(france_coal_x_train_data),
+    france_coal_lag,
+    1
+  )
+)
+
+france_coal_y_train_data <- t(sapply(
+  (1 + france_coal_lag):(length(france_coal_scaled_train) - france_coal_prediction + 1),
+  function(x) france_coal_scaled_train[x:(x + france_coal_prediction - 1)]
+))
+
+france_coal_y_train_arr <- array(
+  data = as.numeric(unlist(france_coal_y_train_data)),
+  dim = c(
+    nrow(france_coal_y_train_data),
+    france_coal_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_coal_x_test <- france_coal_data$FR.coal[(nrow(france_coal_scaled_train) - france_coal_prediction + 1):nrow(france_coal_scaled_train)]
+france_coal_x_test_scaled <- (france_coal_x_test - france_coal_scale_factors[1]) / france_coal_scale_factors[2]
+
+france_coal_x_pred_arr <- array(
+  data = france_coal_x_test_scaled,
+  dim = c(
+    1,
+    france_coal_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_coal_lstm_model <- keras_model_sequential()
+
+france_coal_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_coal_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+france_coal_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_coal_lstm_model %>% fit(
+  x = france_coal_x_train_arr,
+  y = france_coal_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_coal_lstm_forecast <- france_coal_lstm_model %>%
+  predict(france_coal_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_coal_lstm_forecast <- france_coal_lstm_forecast * france_coal_scale_factors[2] + france_coal_scale_factors[1]
+
+# Create the forecast object
+france_coal_fitted <- predict(france_coal_lstm_model, france_coal_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_coal_fitted)) > 1) {
+  if (dim(france_coal_fitted)[2] > 1) {
+    france_coal_fit <- c(france_coal_fitted[, 1], france_coal_fitted[dim(france_coal_fitted)[1], 2:dim(france_coal_fitted)[2]])
+  } else {
+    france_coal_fit <- france_coal_fitted[, 1]
+  }
+} else {
+  france_coal_fit <- france_coal_fitted
+}
+
+france_coal_fitted <- france_coal_fit * france_coal_scale_factors[2] + france_coal_scale_factors[1]
+
+france_coal_fitted <- c(rep(NA, france_coal_lag), france_coal_fitted)
+
+france_coal_lstm_forecast <- timetk::tk_ts(france_coal_lstm_forecast,
+                                            start = c(2023, 6),
+                                            end = c(2023, 6),
+                                            frequency = 1
+)
+
+france_coal_input_ts <- timetk::tk_ts(france_coal_data$FR.coal, 
+                                       start = c(2020, 3), 
+                                       end = c(2023, 5), 
+                                       frequency = 1
+)
+
+france_coal_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_coal_lstm_forecast,
+  x = france_coal_input_ts,
+  fitted = france_coal_fitted,
+  residuals = as.numeric(france_coal_input_ts) - as.numeric(france_coal_fitted)
+)
+
+class(france_coal_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_coal_pred <- france_coal_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_coal_pred)
+
+# Determine performance metrics
+lstm_france_coal_mape <- mean(abs((france_coal_data$FR.coal - lstm_france_coal_pred) / france_coal_data$FR.coal)) * 100
+print(lstm_france_coal_mape)
+
+##############################-FRANCE NUCLEAR-##############################
+
+# Importing and selecting data for FR.nuclear
+france_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, FR.nuclear)
+
+# Set the scaling factors for the France nuclear data
+france_nuclear_scale_factors <- c(mean(france_nuclear_data$FR.nuclear), sd(france_nuclear_data$FR.nuclear))
+
+# Prepare the training data
+france_nuclear_scaled_train <- france_nuclear_data %>%
+  dplyr::select(FR.nuclear) %>%
+  dplyr::mutate(FR.nuclear = (FR.nuclear - france_nuclear_scale_factors[1]) / france_nuclear_scale_factors[2])
+
+france_nuclear_prediction <- 1
+france_nuclear_lag <- france_nuclear_prediction
+
+france_nuclear_scaled_train <- as.matrix(france_nuclear_scaled_train)
+
+france_nuclear_x_train_data <- t(sapply(
+  1:(length(france_nuclear_scaled_train) - france_nuclear_lag - france_nuclear_prediction + 1),
+  function(x) france_nuclear_scaled_train[x:(x + france_nuclear_lag - 1), 1]
+))
+
+france_nuclear_x_train_arr <- array(
+  data = as.numeric(unlist(france_nuclear_x_train_data)),
+  dim = c(
+    nrow(france_nuclear_x_train_data),
+    france_nuclear_lag,
+    1
+  )
+)
+
+france_nuclear_y_train_data <- t(sapply(
+  (1 + france_nuclear_lag):(length(france_nuclear_scaled_train) - france_nuclear_prediction + 1),
+  function(x) france_nuclear_scaled_train[x:(x + france_nuclear_prediction - 1)]
+))
+
+france_nuclear_y_train_arr <- array(
+  data = as.numeric(unlist(france_nuclear_y_train_data)),
+  dim = c(
+    nrow(france_nuclear_y_train_data),
+    france_nuclear_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_nuclear_x_test <- france_nuclear_data$FR.nuclear[(nrow(france_nuclear_scaled_train) - france_nuclear_prediction + 1):nrow(france_nuclear_scaled_train)]
+france_nuclear_x_test_scaled <- (france_nuclear_x_test - france_nuclear_scale_factors[1]) / france_nuclear_scale_factors[2]
+
+france_nuclear_x_pred_arr <- array(
+  data = france_nuclear_x_test_scaled,
+  dim = c(
+    1,
+    france_nuclear_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_nuclear_lstm_model <- keras_model_sequential()
+
+france_nuclear_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_nuclear_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+france_nuclear_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_nuclear_lstm_model %>% fit(
+  x = france_nuclear_x_train_arr,
+  y = france_nuclear_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_nuclear_lstm_forecast <- france_nuclear_lstm_model %>%
+  predict(france_nuclear_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_nuclear_lstm_forecast <- france_nuclear_lstm_forecast * france_nuclear_scale_factors[2] + france_nuclear_scale_factors[1]
+
+# Create the forecast object
+france_nuclear_fitted <- predict(france_nuclear_lstm_model, france_nuclear_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_nuclear_fitted)) > 1) {
+  if (dim(france_nuclear_fitted)[2] > 1) {
+    france_nuclear_fit <- c(france_nuclear_fitted[, 1], france_nuclear_fitted[dim(france_nuclear_fitted)[1], 2:dim(france_nuclear_fitted)[2]])
+  } else {
+    france_nuclear_fit <- france_nuclear_fitted[, 1]
+  }
+} else {
+  france_nuclear_fit <- france_nuclear_fitted
+}
+
+france_nuclear_fitted <- france_nuclear_fit * france_nuclear_scale_factors[2] + france_nuclear_scale_factors[1]
+
+france_nuclear_fitted <- c(rep(NA, france_nuclear_lag), france_nuclear_fitted)
+
+france_nuclear_lstm_forecast <- timetk::tk_ts(france_nuclear_lstm_forecast,
+                                               start = c(2023, 6),
+                                               end = c(2023, 6),
+                                               frequency = 1
+)
+
+france_nuclear_input_ts <- timetk::tk_ts(france_nuclear_data$FR.nuclear, 
+                                          start = c(2020, 3), 
+                                          end = c(2023, 5), 
+                                          frequency = 1
+)
+
+france_nuclear_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_nuclear_lstm_forecast,
+  x = france_nuclear_input_ts,
+  fitted = france_nuclear_fitted,
+  residuals = as.numeric(france_nuclear_input_ts) - as.numeric(france_nuclear_fitted)
+)
+
+class(gfrance_nuclear_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_nuclear_pred <- france_nuclear_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_nuclear_pred)
+
+# Determine performance metrics
+lstm_france_nuclear_mape <- mean(abs((france_nuclear_data$FR.nuclear - lstm_france_nuclear_pred) / france_nuclear_data$FR.nuclear)) * 100
+print(lstm_france_nuclear_mape)
+
+##############################-FRANCE SOLAR-##############################
+
+# Importing and selecting data for FR.solar
+france_solar_data <- imp_energy_sources %>% dplyr::select(Date, FR.solar)
+
+# Set the scaling factors for the France solar data
+france_solar_scale_factors <- c(mean(france_solar_data$FR.solar), sd(france_solar_data$FR.solar))
+
+# Prepare the training data
+france_solar_scaled_train <- france_solar_data %>%
+  dplyr::select(FR.solar) %>%
+  dplyr::mutate(FR.solar = (FR.solar - france_solar_scale_factors[1]) / france_solar_scale_factors[2])
+
+france_solar_prediction <- 1
+france_solar_lag <- france_solar_prediction
+
+france_solar_scaled_train <- as.matrix(france_solar_scaled_train)
+
+france_solar_x_train_data <- t(sapply(
+  1:(length(france_solar_scaled_train) - france_solar_lag - france_solar_prediction + 1),
+  function(x) france_solar_scaled_train[x:(x + germany_solar_lag - 1), 1]
+))
+
+france_solar_x_train_arr <- array(
+  data = as.numeric(unlist(france_solar_x_train_data)),
+  dim = c(
+    nrow(france_solar_x_train_data),
+    france_solar_lag,
+    1
+  )
+)
+
+france_solar_y_train_data <- t(sapply(
+  (1 + france_solar_lag):(length(france_solar_scaled_train) - france_solar_prediction + 1),
+  function(x) france_solar_scaled_train[x:(x + france_solar_prediction - 1)]
+))
+
+france_solar_y_train_arr <- array(
+  data = as.numeric(unlist(france_solar_y_train_data)),
+  dim = c(
+    nrow(france_solar_y_train_data),
+    france_solar_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_solar_x_test <- france_solar_data$FR.solar[(nrow(france_solar_scaled_train) - france_solar_prediction + 1):nrow(france_solar_scaled_train)]
+france_solar_x_test_scaled <- (france_solar_x_test - france_solar_scale_factors[1]) / france_solar_scale_factors[2]
+
+france_solar_x_pred_arr <- array(
+  data = france_solar_x_test_scaled,
+  dim = c(
+    1,
+    france_solar_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_solar_lstm_model <- keras_model_sequential()
+
+france_solar_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_solar_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+france_solar_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_solar_lstm_model %>% fit(
+  x = france_solar_x_train_arr,
+  y = france_solar_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_solar_lstm_forecast <- france_solar_lstm_model %>%
+  predict(france_solar_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_solar_lstm_forecast <- france_solar_lstm_forecast * france_solar_scale_factors[2] + france_solar_scale_factors[1]
+
+# Create the forecast object
+france_solar_fitted <- predict(france_solar_lstm_model, france_solar_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_solar_fitted)) > 1) {
+  if (dim(france_solar_fitted)[2] > 1) {
+    france_solar_fit <- c(france_solar_fitted[, 1], france_solar_fitted[dim(france_solar_fitted)[1], 2:dim(france_solar_fitted)[2]])
+  } else {
+    france_solar_fit <- france_solar_fitted[, 1]
+  }
+} else {
+  france_solar_fit <- france_solar_fitted
+}
+
+france_solar_fitted <- france_solar_fit * france_solar_scale_factors[2] + france_solar_scale_factors[1]
+
+france_solar_fitted <- c(rep(NA, france_solar_lag), france_solar_fitted)
+
+france_solar_lstm_forecast <- timetk::tk_ts(france_solar_lstm_forecast,
+                                             start = c(2023, 6),
+                                             end = c(2023, 6),
+                                             frequency = 1
+)
+
+france_solar_input_ts <- timetk::tk_ts(france_solar_data$FR.solar, 
+                                        start = c(2020, 3), 
+                                        end = c(2023, 5), 
+                                        frequency = 1
+)
+
+france_solar_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_solar_lstm_forecast,
+  x = france_solar_input_ts,
+  fitted = france_solar_fitted,
+  residuals = as.numeric(france_solar_input_ts) - as.numeric(france_solar_fitted)
+)
+
+class(france_solar_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_solar_pred <- france_solar_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_solar_pred)
+
+# Determine performance metrics
+lstm_france_solar_mape <- mean(abs((france_solar_data$FR.solar - lstm_france_solar_pred) / france_solar_data$FR.solar)) * 100
+print(lstm_france_solar_mape)
+
+##############################-FRANCE WIND-##############################
+
+# Importing and selecting data for FR.wind
+france_wind_data <- imp_energy_sources %>% dplyr::select(Date, FR.wind)
+
+# Set the scaling factors for the France wind data
+france_wind_scale_factors <- c(mean(france_wind_data$FR.wind), sd(france_wind_data$FR.wind))
+
+# Prepare the training data
+france_wind_scaled_train <- france_wind_data %>%
+  dplyr::select(FR.wind) %>%
+  dplyr::mutate(FR.wind = (FR.wind - france_wind_scale_factors[1]) / france_wind_scale_factors[2])
+
+france_wind_prediction <- 1
+france_wind_lag <- france_wind_prediction
+
+france_wind_scaled_train <- as.matrix(france_wind_scaled_train)
+
+france_wind_x_train_data <- t(sapply(
+  1:(length(france_wind_scaled_train) - france_wind_lag - france_wind_prediction + 1),
+  function(x) france_wind_scaled_train[x:(x + france_wind_lag - 1), 1]
+))
+
+france_wind_x_train_arr <- array(
+  data = as.numeric(unlist(france_wind_x_train_data)),
+  dim = c(
+    nrow(france_wind_x_train_data),
+    france_wind_lag,
+    1
+  )
+)
+
+france_wind_y_train_data <- t(sapply(
+  (1 + france_wind_lag):(length(france_wind_scaled_train) - france_wind_prediction + 1),
+  function(x) france_wind_scaled_train[x:(x + france_wind_prediction - 1)]
+))
+
+france_wind_y_train_arr <- array(
+  data = as.numeric(unlist(france_wind_y_train_data)),
+  dim = c(
+    nrow(france_wind_y_train_data),
+    france_wind_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+france_wind_x_test <- france_wind_data$FR.wind[(nrow(france_wind_scaled_train) - france_wind_prediction + 1):nrow(france_wind_scaled_train)]
+france_wind_x_test_scaled <- (france_wind_x_test - france_wind_scale_factors[1]) / france_wind_scale_factors[2]
+
+france_wind_x_pred_arr <- array(
+  data = france_wind_x_test_scaled,
+  dim = c(
+    1,
+    france_wind_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+france_wind_lstm_model <- keras_model_sequential()
+
+france_wind_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, france_wind_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+france_wind_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+france_wind_lstm_model %>% fit(
+  x = france_wind_x_train_arr,
+  y = france_wind_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+france_wind_lstm_forecast <- france_wind_lstm_model %>%
+  predict(france_wind_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+france_wind_lstm_forecast <- france_wind_lstm_forecast * france_wind_scale_factors[2] + france_wind_scale_factors[1]
+
+# Create the forecast object
+france_wind_fitted <- predict(france_wind_lstm_model, france_wind_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(france_wind_fitted)) > 1) {
+  if (dim(france_wind_fitted)[2] > 1) {
+    france_wind_fit <- c(france_wind_fitted[, 1], france_wind_fitted[dim(france_wind_fitted)[1], 2:dim(france_wind_fitted)[2]])
+  } else {
+    france_wind_fit <- france_wind_fitted[, 1]
+  }
+} else {
+  france_wind_fit <- france_wind_fitted
+}
+
+france_wind_fitted <- france_wind_fit * france_wind_scale_factors[2] + france_wind_scale_factors[1]
+
+france_wind_fitted <- c(rep(NA, france_wind_lag), france_wind_fitted)
+
+france_wind_lstm_forecast <- timetk::tk_ts(france_wind_lstm_forecast,
+                                            start = c(2023, 6),
+                                            end = c(2023, 6),
+                                            frequency = 1
+)
+
+france_wind_input_ts <- timetk::tk_ts(france_wind_data$FR.wind, 
+                                       start = c(2020, 3), 
+                                       end = c(2023, 5), 
+                                       frequency = 1
+)
+
+france_wind_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = france_wind_lstm_forecast,
+  x = france_wind_input_ts,
+  fitted = france_wind_fitted,
+  residuals = as.numeric(france_wind_input_ts) - as.numeric(france_wind_fitted)
+)
+
+class(france_wind_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_france_wind_pred <- france_wind_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_france_wind_pred)
+
+# Determine performance metrics
+lstm_france_wind_mape <- mean(abs((france_wind_data$FR.wind - lstm_france_wind_pred) / france_wind_data$FR.wind)) * 100
+print(lstm_france_wind_mape)
+
+##############################-IRELAND HYDRO-##############################
+
+# Importing and selecting data for IE.hydro
+ireland_hydro_data <- imp_energy_sources %>% dplyr::select(Date, IE.hydro)
+
+# Set the scaling factors for the France hydro data
+ireland_hydro_scale_factors <- c(mean(ireland_hydro_data$IE.hydro), sd(ireland_hydro_data$IE.hydro))
+
+# Prepare the training data
+ireland_hydro_scaled_train <- ireland_hydro_data %>%
+  dplyr::select(IE.hydro) %>%
+  dplyr::mutate(IE.hydro = (IE.hydro - ireland_hydro_scale_factors[1]) / ireland_hydro_scale_factors[2])
+
+ireland_hydro_prediction <- 1
+ireland_hydro_lag <- ireland_hydro_prediction
+
+ireland_hydro_scaled_train <- as.matrix(ireland_hydro_scaled_train)
+
+ireland_hydro_x_train_data <- t(sapply(
+  1:(length(ireland_hydro_scaled_train) - ireland_hydro_lag - ireland_hydro_prediction + 1),
+  function(x) ireland_hydro_scaled_train[x:(x + ireland_hydro_lag - 1), 1]
+))
+
+ireland_hydro_x_train_arr <- array(
+  data = as.numeric(unlist(ireland_hydro_x_train_data)),
+  dim = c(
+    nrow(ireland_hydro_x_train_data),
+    ireland_hydro_lag,
+    1
+  )
+)
+
+ireland_hydro_y_train_data <- t(sapply(
+  (1 + ireland_hydro_lag):(length(ireland_hydro_scaled_train) - ireland_hydro_prediction + 1),
+  function(x) ireland_hydro_scaled_train[x:(x + ireland_hydro_prediction - 1)]
+))
+
+ireland_hydro_y_train_arr <- array(
+  data = as.numeric(unlist(ireland_hydro_y_train_data)),
+  dim = c(
+    nrow(ireland_hydro_y_train_data),
+    ireland_hydro_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+ireland_hydro_x_test <- ireland_hydro_data$IE.hydro[(nrow(ireland_hydro_scaled_train) - ireland_hydro_prediction + 1):nrow(ireland_hydro_scaled_train)]
+ireland_hydro_x_test_scaled <- (ireland_hydro_x_test - ireland_hydro_scale_factors[1]) / ireland_hydro_scale_factors[2]
+
+ireland_hydro_x_pred_arr <- array(
+  data = ireland_hydro_x_test_scaled,
+  dim = c(
+    1,
+    ireland_hydro_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+ireland_hydro_lstm_model <- keras_model_sequential()
+
+ireland_hydro_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, ireland_hydro_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+ireland_hydro_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+ireland_hydro_lstm_model %>% fit(
+  x = ireland_hydro_x_train_arr,
+  y = ireland_hydro_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+ireland_hydro_lstm_forecast <- ireland_hydro_lstm_model %>%
+  predict(ireland_hydro_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+ireland_hydro_lstm_forecast <- ireland_hydro_lstm_forecast * ireland_hydro_scale_factors[2] + ireland_hydro_scale_factors[1]
+
+# Create the forecast object
+ireland_hydro_fitted <- predict(ireland_hydro_lstm_model, ireland_hydro_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(ireland_hydro_fitted)) > 1) {
+  if (dim(ireland_hydro_fitted)[2] > 1) {
+    ireland_hydro_fit <- c(ireland_hydro_fitted[, 1], ireland_hydro_fitted[dim(ireland_hydro_fitted)[1], 2:dim(ireland_hydro_fitted)[2]])
+  } else {
+    ireland_hydro_fit <- ireland_hydro_fitted[, 1]
+  }
+} else {
+  ireland_hydro_fit <- ireland_hydro_fitted
+}
+
+ireland_hydro_fitted <- ireland_hydro_fit * ireland_hydro_scale_factors[2] + ireland_hydro_scale_factors[1]
+
+ireland_hydro_fitted <- c(rep(NA, ireland_hydro_lag), ireland_hydro_fitted)
+
+ireland_hydro_lstm_forecast <- timetk::tk_ts(ireland_hydro_lstm_forecast,
+                                            start = c(2023, 6),
+                                            end = c(2023, 6),
+                                            frequency = 1
+)
+
+ireland_hydro_input_ts <- timetk::tk_ts(ireland_hydro_data$IE.hydro, 
+                                       start = c(2020, 3), 
+                                       end = c(2023, 5), 
+                                       frequency = 1
+)
+
+ireland_hydro_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = ireland_hydro_lstm_forecast,
+  x = ireland_hydro_input_ts,
+  fitted = ireland_hydro_fitted,
+  residuals = as.numeric(ireland_hydro_input_ts) - as.numeric(ireland_hydro_fitted)
+)
+
+class(ireland_hydro_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_ireland_hydro_pred <- ireland_hydro_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_ireland_hydro_pred)
+
+# Determine performance metrics
+lstm_ireland_hydro_mape <- mean(abs((ireland_hydro_data$IE.hydro - lstm_ireland_hydro_pred) / ireland_hydro_data$IE.hydro)) * 100
+print(lstm_ireland_hydro_mape)
+
+##############################-IRELAND GAS-##############################
+
+# Importing and selecting data for IE.gas
+ireland_gas_data <- imp_energy_sources %>% dplyr::select(Date, IE.gas)
+
+# Set the scaling factors for the Ireland gas data
+ireland_gas_scale_factors <- c(mean(ireland_gas_data$IE.gas), sd(ireland_gas_data$IE.gas))
+
+# Prepare the training data
+ireland_gas_scaled_train <- ireland_gas_data %>%
+  dplyr::select(IE.gas) %>%
+  dplyr::mutate(IE.gas = (IE.gas - ireland_gas_scale_factors[1]) / ireland_gas_scale_factors[2])
+
+ireland_gas_prediction <- 1
+ireland_gas_lag <- ireland_gas_prediction
+
+ireland_gas_scaled_train <- as.matrix(ireland_gas_scaled_train)
+
+ireland_gas_x_train_data <- t(sapply(
+  1:(length(ireland_gas_scaled_train) - ireland_gas_lag - ireland_gas_prediction + 1),
+  function(x) ireland_gas_scaled_train[x:(x + ireland_gas_lag - 1), 1]
+))
+
+ireland_gas_x_train_arr <- array(
+  data = as.numeric(unlist(ireland_gas_x_train_data)),
+  dim = c(
+    nrow(ireland_gas_x_train_data),
+    ireland_gas_lag,
+    1
+  )
+)
+
+ireland_gas_y_train_data <- t(sapply(
+  (1 + ireland_gas_lag):(length(ireland_gas_scaled_train) - ireland_gas_prediction + 1),
+  function(x) ireland_gas_scaled_train[x:(x + ireland_gas_prediction - 1)]
+))
+
+ireland_gas_y_train_arr <- array(
+  data = as.numeric(unlist(ireland_gas_y_train_data)),
+  dim = c(
+    nrow(ireland_gas_y_train_data),
+    ireland_gas_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+ireland_gas_x_test <- ireland_gas_data$IE.gas[(nrow(ireland_gas_scaled_train) - ireland_gas_prediction + 1):nrow(ireland_gas_scaled_train)]
+ireland_gas_x_test_scaled <- (ireland_gas_x_test - ireland_gas_scale_factors[1]) / ireland_gas_scale_factors[2]
+
+ireland_gas_x_pred_arr <- array(
+  data = ireland_gas_x_test_scaled,
+  dim = c(
+    1,
+    ireland_gas_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+ireland_gas_lstm_model <- keras_model_sequential()
+
+ireland_gas_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, ireland_gas_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+ireland_gas_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+ireland_gas_lstm_model %>% fit(
+  x = ireland_gas_x_train_arr,
+  y = ireland_gas_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+ireland_gas_lstm_forecast <- ireland_gas_lstm_model %>%
+  predict(ireland_gas_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+ireland_gas_lstm_forecast <- ireland_gas_lstm_forecast * ireland_gas_scale_factors[2] + ireland_gas_scale_factors[1]
+
+# Create the forecast object
+ireland_gas_fitted <- predict(ireland_gas_lstm_model, ireland_gas_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(ireland_gas_fitted)) > 1) {
+  if (dim(ireland_gas_fitted)[2] > 1) {
+    ireland_gas_fit <- c(ireland_gas_fitted[, 1], ireland_gas_fitted[dim(ireland_gas_fitted)[1], 2:dim(ireland_gas_fitted)[2]])
+  } else {
+    ireland_gas_fit <- ireland_gas_fitted[, 1]
+  }
+} else {
+  ireland_gas_fit <- ireland_gas_fitted
+}
+
+ireland_gas_fitted <- ireland_gas_fit * ireland_gas_scale_factors[2] + ireland_gas_scale_factors[1]
+
+ireland_gas_fitted <- c(rep(NA, ireland_gas_lag), ireland_gas_fitted)
+
+ireland_gas_lstm_forecast <- timetk::tk_ts(ireland_gas_lstm_forecast,
+                                          start = c(2023, 6),
+                                          end = c(2023, 6),
+                                          frequency = 1
+)
+
+ireland_gas_input_ts <- timetk::tk_ts(ireland_gas_data$IE.gas, 
+                                     start = c(2020, 3), 
+                                     end = c(2023, 5), 
+                                     frequency = 1
+)
+
+ireland_gas_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = ireland_gas_lstm_forecast,
+  x = ireland_gas_input_ts,
+  fitted = ireland_gas_fitted,
+  residuals = as.numeric(ireland_gas_input_ts) - as.numeric(ireland_gas_fitted)
+)
+
+class(ireland_gas_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_ireland_gas_pred <- ireland_gas_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_ireland_gas_pred)
+
+# Determine performance metrics
+lstm_ireland_gas_mape <- mean(abs((ireland_gas_data$IE.gas - lstm_ireland_gas_pred) / ireland_gas_data$IE.gas)) * 100
+print(lstm_ireland_gas_mape)
+
+##############################-IRELAND OIL-##############################
+
+# Importing and selecting data for IE.oil
+ireland_oil_data <- imp_energy_sources %>% dplyr::select(Date, IE.oil)
+
+# Set the scaling factors for the Germany oil data
+ireland_oil_scale_factors <- c(mean(ireland_oil_data$IE.oil), sd(ireland_oil_data$IE.oil))
+
+# Prepare the training data
+ireland_oil_scaled_train <- ireland_oil_data %>%
+  dplyr::select(IE.oil) %>%
+  dplyr::mutate(IE.oil = (IE.oil - ireland_oil_scale_factors[1]) / ireland_oil_scale_factors[2])
+
+ireland_oil_prediction <- 1
+ireland_oil_lag <- ireland_oil_prediction
+
+ireland_oil_scaled_train <- as.matrix(ireland_oil_scaled_train)
+
+ireland_oil_x_train_data <- t(sapply(
+  1:(length(ireland_oil_scaled_train) - ireland_oil_lag - ireland_oil_prediction + 1),
+  function(x) ireland_oil_scaled_train[x:(x + ireland_oil_lag - 1), 1]
+))
+
+ireland_oil_x_train_arr <- array(
+  data = as.numeric(unlist(ireland_oil_x_train_data)),
+  dim = c(
+    nrow(ireland_oil_x_train_data),
+    ireland_oil_lag,
+    1
+  )
+)
+
+ireland_oil_y_train_data <- t(sapply(
+  (1 + ireland_oil_lag):(length(ireland_oil_scaled_train) - ireland_oil_prediction + 1),
+  function(x) ireland_oil_scaled_train[x:(x + ireland_oil_prediction - 1)]
+))
+
+ireland_oil_y_train_arr <- array(
+  data = as.numeric(unlist(ireland_oil_y_train_data)),
+  dim = c(
+    nrow(ireland_oil_y_train_data),
+    ireland_oil_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+ireland_oil_x_test <- ireland_oil_data$IE.oil[(nrow(ireland_oil_scaled_train) - ireland_oil_prediction + 1):nrow(ireland_oil_scaled_train)]
+ireland_oil_x_test_scaled <- (ireland_oil_x_test - ireland_oil_scale_factors[1]) / ireland_oil_scale_factors[2]
+
+ireland_oil_x_pred_arr <- array(
+  data = ireland_oil_x_test_scaled,
+  dim = c(
+    1,
+    ireland_oil_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+ireland_oil_lstm_model <- keras_model_sequential()
+
+ireland_oil_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, ireland_oil_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+ireland_oil_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+ireland_oil_lstm_model %>% fit(
+  x = ireland_oil_x_train_arr,
+  y = ireland_oil_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+ireland_oil_lstm_forecast <- ireland_oil_lstm_model %>%
+  predict(ireland_oil_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+ireland_oil_lstm_forecast <- ireland_oil_lstm_forecast * ireland_oil_scale_factors[2] + ireland_oil_scale_factors[1]
+
+# Create the forecast object
+ireland_oil_fitted <- predict(ireland_oil_lstm_model, ireland_oil_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(ireland_oil_fitted)) > 1) {
+  if (dim(ireland_oil_fitted)[2] > 1) {
+    ireland_oil_fit <- c(ireland_oil_fitted[, 1], ireland_oil_fitted[dim(ireland_oil_fitted)[1], 2:dim(ireland_oil_fitted)[2]])
+  } else {
+    ireland_oil_fit <- ireland_oil_fitted[, 1]
+  }
+} else {
+  ireland_oil_fit <- ireland_oil_fitted
+}
+
+ireland_oil_fitted <-ireland_oil_fit * ireland_oil_scale_factors[2] + ireland_oil_scale_factors[1]
+
+ireland_oil_fitted <- c(rep(NA, ireland_oil_lag), ireland_oil_fitted)
+
+ireland_oil_lstm_forecast <- timetk::tk_ts(ireland_oil_lstm_forecast,
+                                          start = c(2023, 6),
+                                          end = c(2023, 6),
+                                          frequency = 1
+)
+
+ireland_oil_input_ts <- timetk::tk_ts(ireland_oil_data$IE.oil, 
+                                     start = c(2020, 3), 
+                                     end = c(2023, 5), 
+                                     frequency = 1
+)
+
+ireland_oil_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = ireland_oil_lstm_forecast,
+  x = ireland_oil_input_ts,
+  fitted = ireland_oil_fitted,
+  residuals = as.numeric(ireland_oil_input_ts) - as.numeric(ireland_oil_fitted)
+)
+
+class(ireland_oil_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_ireland_oil_pred <- ireland_oil_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_ireland_oil_pred)
+
+# Determine performance metrics
+lstm_ireland_oil_mape <- mean(abs((ireland_oil_data$IE.oil - lstm_ireland_oil_pred) / ireland_oil_data$IE.oil)) * 100
+print(lstm_ireland_oil_mape)
+
+##############################-IRELAND COAL-##############################
+
+# Importing and selecting data for IE.coal
+ireland_coal_data <- imp_energy_sources %>% dplyr::select(Date, IE.coal)
+
+# Set the scaling factors for the Ireland coal data
+ireland_coal_scale_factors <- c(mean(ireland_coal_data$IE.coal), sd(ireland_coal_data$IE.coal))
+
+# Prepare the training data
+ireland_coal_scaled_train <- ireland_coal_data %>%
+  dplyr::select(IE.coal) %>%
+  dplyr::mutate(IE.coal = (IE.coal - ireland_coal_scale_factors[1]) / ireland_coal_scale_factors[2])
+
+ireland_coal_prediction <- 1
+ireland_coal_lag <- ireland_coal_prediction
+
+ireland_coal_scaled_train <- as.matrix(ireland_coal_scaled_train)
+
+ireland_coal_x_train_data <- t(sapply(
+  1:(length(ireland_coal_scaled_train) - ireland_coal_lag - ireland_coal_prediction + 1),
+  function(x) ireland_coal_scaled_train[x:(x + ireland_coal_lag - 1), 1]
+))
+
+ireland_coal_x_train_arr <- array(
+  data = as.numeric(unlist(ireland_coal_x_train_data)),
+  dim = c(
+    nrow(ireland_coal_x_train_data),
+    ireland_coal_lag,
+    1
+  )
+)
+
+ireland_coal_y_train_data <- t(sapply(
+  (1 + ireland_coal_lag):(length(ireland_coal_scaled_train) - ireland_coal_prediction + 1),
+  function(x) ireland_coal_scaled_train[x:(x + ireland_coal_prediction - 1)]
+))
+
+ireland_coal_y_train_arr <- array(
+  data = as.numeric(unlist(ireland_coal_y_train_data)),
+  dim = c(
+    nrow(ireland_coal_y_train_data),
+    ireland_coal_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+ireland_coal_x_test <- ireland_coal_data$IE.coal[(nrow(ireland_coal_scaled_train) - ireland_coal_prediction + 1):nrow(ireland_coal_scaled_train)]
+ireland_coal_x_test_scaled <- (ireland_coal_x_test - ireland_coal_scale_factors[1]) / ireland_coal_scale_factors[2]
+
+ireland_coal_x_pred_arr <- array(
+  data = ireland_coal_x_test_scaled,
+  dim = c(
+    1,
+    ireland_coal_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+ireland_coal_lstm_model <- keras_model_sequential()
+
+ireland_coal_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, ireland_coal_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+
+ireland_coal_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+ireland_coal_lstm_model %>% fit(
+  x = ireland_coal_x_train_arr,
+  y = ireland_coal_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+ireland_coal_lstm_forecast <- ireland_coal_lstm_model %>%
+  predict(ireland_coal_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+ireland_coal_lstm_forecast <- ireland_coal_lstm_forecast * ireland_coal_scale_factors[2] + ireland_coal_scale_factors[1]
+
+# Create the forecast object
+ireland_coal_fitted <- predict(ireland_coal_lstm_model, ireland_coal_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(ireland_coal_fitted)) > 1) {
+  if (dim(ireland_coal_fitted)[2] > 1) {
+    ireland_coal_fit <- c(ireland_coal_fitted[, 1], ireland_coal_fitted[dim(ireland_coal_fitted)[1], 2:dim(ireland_coal_fitted)[2]])
+  } else {
+    ireland_coal_fit <- ireland_coal_fitted[, 1]
+  }
+} else {
+  ireland_coal_fit <- ireland_coal_fitted
+}
+
+ireland_coal_fitted <- ireland_coal_fit * ireland_coal_scale_factors[2] + ireland_coal_scale_factors[1]
+
+ireland_coal_fitted <- c(rep(NA, ireland_coal_lag), ireland_coal_fitted)
+
+ireland_coal_lstm_forecast <- timetk::tk_ts(ireland_coal_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+ireland_coal_input_ts <- timetk::tk_ts(ireland_coal_data$IE.coal, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+ireland_coal_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = ireland_coal_lstm_forecast,
+  x = ireland_coal_input_ts,
+  fitted = ireland_coal_fitted,
+  residuals = as.numeric(ireland_coal_input_ts) - as.numeric(ireland_coal_fitted)
+)
+
+class(ireland_coal_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_ireland_coal_pred <- ireland_coal_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_ireland_coal_pred)
+
+# Determine performance metrics
+lstm_ireland_coal_mape <- mean(abs((ireland_coal_data$IE.coal - lstm_ireland_coal_pred) / ireland_coal_data$IE.coal)) * 100
+print(lstm_ireland_coal_mape)
+
+##############################-IRELAND WIND-##############################
+
+# Importing and selecting data for IE.wind
+ireland_wind_data <- imp_energy_sources %>% dplyr::select(Date, IE.wind)
+
+# Set the scaling factors for the Ireland wind data
+ireland_wind_scale_factors <- c(mean(ireland_wind_data$IE.wind), sd(ireland_wind_data$IE.wind))
+
+# Prepare the training data
+ireland_wind_scaled_train <- ireland_wind_data %>%
+  dplyr::select(IE.wind) %>%
+  dplyr::mutate(IE.wind = (IE.wind - ireland_wind_scale_factors[1]) / ireland_wind_scale_factors[2])
+
+ireland_wind_prediction <- 1
+ireland_wind_lag <- ireland_wind_prediction
+
+ireland_wind_scaled_train <- as.matrix(france_wind_scaled_train)
+
+ireland_wind_x_train_data <- t(sapply(
+  1:(length(ireland_wind_scaled_train) - ireland_wind_lag - ireland_wind_prediction + 1),
+  function(x) ireland_wind_scaled_train[x:(x + ireland_wind_lag - 1), 1]
+))
+
+ireland_wind_x_train_arr <- array(
+  data = as.numeric(unlist(ireland_wind_x_train_data)),
+  dim = c(
+    nrow(ireland_wind_x_train_data),
+    ireland_wind_lag,
+    1
+  )
+)
+
+ireland_wind_y_train_data <- t(sapply(
+  (1 + ireland_wind_lag):(length(ireland_wind_scaled_train) - ireland_wind_prediction + 1),
+  function(x) ireland_wind_scaled_train[x:(x + ireland_wind_prediction - 1)]
+))
+
+ireland_wind_y_train_arr <- array(
+  data = as.numeric(unlist(ireland_wind_y_train_data)),
+  dim = c(
+    nrow(ireland_wind_y_train_data),
+    ireland_wind_prediction,
+    1
+  )
+)
+
+# Prepare the prediction data
+ireland_wind_x_test <- ireland_wind_data$IE.wind[(nrow(ireland_wind_scaled_train) - ireland_wind_prediction + 1):nrow(ireland_wind_scaled_train)]
+ireland_wind_x_test_scaled <- (ireland_wind_x_test - ireland_wind_scale_factors[1]) / ireland_wind_scale_factors[2]
+
+ireland_wind_x_pred_arr <- array(
+  data = ireland_wind_x_test_scaled,
+  dim = c(
+    1,
+    ireland_wind_lag,
+    1
+  )
+)
+
+# Build and train the LSTM model
+ireland_wind_lstm_model <- keras_model_sequential()
+
+ireland_wind_lstm_model %>%
+  layer_lstm(units = 50,
+             batch_input_shape = c(1, ireland_wind_lag, 1),
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+
+ireland_wind_lstm_model %>%
+  compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+
+ireland_wind_lstm_model %>% fit(
+  x = ireland_wind_x_train_arr,
+  y = ireland_wind_y_train_arr,
+  batch_size = 1,
+  epochs = 20,
+  verbose = 0,
+  shuffle = FALSE
+)
+
+# Perform the prediction
+ireland_wind_lstm_forecast <- ireland_wind_lstm_model %>%
+  predict(ireland_wind_x_pred_arr, batch_size = 1) %>%
+  .[, , 1]
+
+ireland_wind_lstm_forecast <- ireland_wind_lstm_forecast * ireland_wind_scale_factors[2] + ireland_wind_scale_factors[1]
+
+# Create the forecast object
+ireland_wind_fitted <- predict(ireland_wind_lstm_model, ireland_wind_x_train_arr, batch_size = 1) %>%
+  .[, , 1]
+
+if (length(dim(ireland_wind_fitted)) > 1) {
+  if (dim(ireland_wind_fitted)[2] > 1) {
+    ireland_wind_fit <- c(ireland_wind_fitted[, 1], ireland_wind_fitted[dim(ireland_wind_fitted)[1], 2:dim(ireland_wind_fitted)[2]])
+  } else {
+    ireland_wind_fit <- ireland_wind_fitted[, 1]
+  }
+} else {
+  ireland_wind_fit <- ireland_wind_fitted
+}
+
+ireland_wind_fitted <- ireland_wind_fit * ireland_wind_scale_factors[2] + ireland_wind_scale_factors[1]
+
+ireland_wind_fitted <- c(rep(NA, ireland_wind_lag), ireland_wind_fitted)
+
+ireland_wind_lstm_forecast <- timetk::tk_ts(ireland_wind_lstm_forecast,
+                                           start = c(2023, 6),
+                                           end = c(2023, 6),
+                                           frequency = 1
+)
+
+ireland_wind_input_ts <- timetk::tk_ts(ireland_wind_data$IE.wind, 
+                                      start = c(2020, 3), 
+                                      end = c(2023, 5), 
+                                      frequency = 1
+)
+
+ireland_wind_forecast_list <- list(
+  model = NULL,
+  method = "LSTM",
+  mean = ireland_wind_lstm_forecast,
+  x = ireland_wind_input_ts,
+  fitted = ireland_wind_fitted,
+  residuals = as.numeric(ireland_wind_input_ts) - as.numeric(ireland_wind_fitted)
+)
+
+class(ireland_wind_forecast_list)
+
+# Accessing the forecasted value directly
+lstm_ireland_wind_pred <- ireland_wind_forecast_list$mean[1]
+
+# Printing the prediction value
+print(lstm_ireland_wind_pred)
+
+# Determine performance metrics
+lstm_ireland_wind_mape <- mean(abs((ireland_wind_data$IE.wind - lstm_ireland_wind_pred) / ireland_wind_data$IE.wind)) * 100
+print(lstm_ireland_wind_mape)
+
+################################################################################
