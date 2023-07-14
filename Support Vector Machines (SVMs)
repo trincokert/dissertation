@@ -1,0 +1,1059 @@
+# Load required libraries
+library(dplyr)
+library(writexl)
+library(readxl)
+library(mice)
+library(VIM)
+library(tidyverse)
+library(fpp)
+library(forecast)
+library(backtest)
+library(quantmod)
+library(lubridate)
+library(vars)
+library(zoo)
+library(caret)
+library(e1071)
+library(ggplot2)
+library(caretForecast)
+library(stats)
+library(Metrics)
+
+##############################-SUPPORT VECTOR MACHINES (SVMs)-##############################
+
+##############################-SWISS HYDRO-##############################
+
+# Importing and selecting data for CH.hydro
+swiss_hydro_data <- imp_energy_sources %>% dplyr::select(Date, CH.hydro)
+
+# Prepare Swiss Hydro in the form of a data frame with columns of time-steps (x) and values (y)
+swiss_hydro_data <- swiss_hydro_data[, -c(1)]
+swiss_hydro_daily_data <- unclass(swiss_hydro_data)
+daily <- 1:1177
+swiss_hydro_df <- data.frame(daily, swiss_hydro_daily_data)
+colnames(swiss_hydro_df)<-c("x_CH.hydro", "y_CH.hydro")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_CH.hydro <- 1:(nrow(swiss_hydro_df) * train_size)
+data.train_CH.hydro <- swiss_hydro_df[train_index_CH.hydro, ]
+data.test_CH.hydro <- swiss_hydro_df[-train_index_CH.hydro, ]
+
+# Train a support vector machine (SVM) model on training dataset
+swiss_hydro_svm_train <- svm(y_CH.hydro ~ x_CH.hydro, data = data.train_CH.hydro)
+
+# Compute forecasts on testing dataset
+swiss_hydro_svm_test <- predict(swiss_hydro_svm_train, newdata = data.frame(data.test_CH.hydro))
+
+# Determine performance metrics
+forecast::accuracy(swiss_hydro_svm_test, data.test_CH.hydro$y_CH.hydro)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+swiss_hydro_forecast_june1st <- predict(swiss_hydro_svm_train, newdata = data.frame(x_CH.hydro = june1st))
+swiss_hydro_svm_june1st <- swiss_hydro_forecast_june1st[1178]
+print(swiss_hydro_svm_june1st)
+
+# Plot the results - Swiss Hydro (CH.hydro) June 1st
+ylim <- c(min(swiss_hydro_df$y_CH.hydro), max(swiss_hydro_df$y_CH.hydro))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_CH.hydro$y_CH.hydro), y = data.train_CH.hydro$y_CH.hydro, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Swiss Hydro - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+par(new=TRUE)
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+lines(x =1:length(data.train_CH.hydro$y_CH.hydro), y = swiss_hydro_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_CH.hydro$y_CH.hydro) + 1:length(data.test_CH.hydro$y_CH.hydro),y = data.test_CH.hydro$y_CH.hydro)
+lines(x=length(data.train_CH.hydro$y_CH.hydro) + 1:length(data.test_CH.hydro$y_CH.hydro), y = swiss_hydro_svm_test, col = "red")
+
+##############################-SWISS NUCLEAR-##############################
+
+# Importing and selecting data for CH.nuclear
+swiss_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, CH.nuclear)
+
+# Prepare Swiss Nuclear in the form of a data frame with columns of time-steps (x) and values (y)
+swiss_nuclear_data <- swiss_nuclear_data[, -c(1)]
+swiss_nuclear_daily_data <- unclass(swiss_nuclear_data)
+daily <- 1:1177
+swiss_nuclear_df <- data.frame(daily, swiss_nuclear_daily_data)
+colnames(swiss_nuclear_df)<-c("x_CH.nuclear","y_CH.nuclear")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_CH.nuclear <- 1:(nrow(swiss_nuclear_df) * train_size)
+data.train_CH.nuclear <- swiss_nuclear_df[train_index_CH.nuclear, ]
+data.test_CH.nuclear <- swiss_nuclear_df[-train_index_CH.nuclear, ]
+
+# Train a support vector machine (SVM) model on training dataset
+swiss_nuclear_svm_train <- svm(y_CH.nuclear ~ x_CH.nuclear, data = data.train_CH.nuclear)
+
+# Compute forecasts on testing dataset
+swiss_nuclear_svm_test <- predict(swiss_nuclear_svm_train, newdata = data.frame(data.test_CH.nuclear))
+
+# Determine performance metrics
+forecast::accuracy(swiss_nuclear_svm_test, data.test_CH.nuclear$y_CH.nuclear)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+swiss_nuclear_forecast_june1st <- predict(swiss_nuclear_svm_train, newdata = data.frame(x_CH.nuclear = june1st))
+swiss_nuclear_svm_june1st <- swiss_nuclear_forecast_june1st[1178]
+print(swiss_nuclear_svm_june1st)
+
+# Plot the results - Swiss Nuclear (CH.nuclear) June 1st
+ylim <- c(min(swiss_nuclear_df$y_CH.nuclear), max(swiss_nuclear_df$y_CH.nuclear))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_CH.nuclear$y_CH.nuclear), y = data.train_CH.nuclear$y_CH.nuclear, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Swiss Nuclear - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_CH.nuclear$y_CH.nuclear), y = swiss_nuclear_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_CH.nuclear$y_CH.nuclear) + 1:length(data.test_CH.nuclear$y_CH.nuclear),y = data.test_CH.nuclear$y_CH.nuclear)
+lines(x=length(data.train_CH.nuclear$y_CH.nuclear) + 1:length(data.test_CH.nuclear$y_CH.nuclear), y = swiss_nuclear_svm_test, col = "red")
+
+##############################-SWISS SOLAR-##############################
+
+# Importing and selecting data for CH.solar
+swiss_solar_data <- imp_energy_sources %>% dplyr::select(Date, CH.solar)
+
+# Prepare Swiss Solar in the form of a data frame with columns of time-steps (x) and values (y)
+swiss_solar_data <- swiss_solar_data[, -c(1)]
+swiss_solar_daily_data <- unclass(swiss_solar_data)
+daily <- 1:1177
+swiss_solar_df <- data.frame(daily, swiss_solar_daily_data)
+colnames(swiss_solar_df)<-c("x_CH.solar","y_CH.solar")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_CH.solar <- 1:(nrow(swiss_nuclear_df) * train_size)
+data.train_CH.solar <- swiss_solar_df[train_index_CH.solar, ]
+data.test_CH.solar <- swiss_solar_df[-train_index_CH.solar, ]
+
+# Train a support vector machine (svm) model on training dataset
+swiss_solar_svm_train <- svm(y_CH.solar ~ x_CH.solar, data = data.train_CH.solar)
+
+# Compute forecasts on testing dataset
+swiss_solar_svm_test <- predict(swiss_solar_svm_train, newdata = data.frame(data.test_CH.solar))
+
+# Determine performance metrics
+forecast::accuracy(swiss_solar_svm_test, data.test_CH.solar$y_CH.solar)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+swiss_solar_forecast_june1st <- predict(swiss_solar_svm_train, newdata = data.frame(x_CH.solar = june1st))
+swiss_solar_svm_june1st <- swiss_solar_forecast_june1st[1178]
+print(swiss_solar_svm_june1st)
+
+# Plot the results - Swiss Solar (CH.solar) June 1st
+ylim <- c(min(swiss_solar_df$y_CH.solar), max(swiss_solar_df$y_CH.solar))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_CH.solar$y_CH.solar), y = data.train_CH.solar$y_CH.solar, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Swiss Solar - SVM Model", xlab = "Day", ylab = "Actual Generation (MW")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_CH.solar$y_CH.solar), y = swiss_solar_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_CH.solar$y_CH.solar) + 1:length(data.test_CH.solar$y_CH.solar),y = data.test_CH.solar$y_CH.solar)
+lines(x=length(data.train_CH.solar$y_CH.solar) + 1:length(data.test_CH.solar$y_CH.solar), y = swiss_solar_svm_test, col = "red")
+
+##############################-SWISS WIND-##############################
+
+# Importing and selecting data for CH.wind
+swiss_wind_data <- imp_energy_sources %>% dplyr::select(Date, CH.wind)
+
+# Prepare Swiss Wind in the form of a data frame with columns of time-steps (x) and values (y)
+swiss_wind_data <- swiss_wind_data[, -c(1)]
+swiss_wind_daily_data <- unclass(swiss_wind_data)
+daily <- 1:1177
+swiss_wind_df <- data.frame(daily, swiss_wind_daily_data)
+colnames(swiss_wind_df)<-c("x_CH.wind","y_CH.wind")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_CH.wind <- 1:(nrow(swiss_wind_df) * train_size)
+data.train_CH.wind <- swiss_wind_df[train_index_CH.wind, ]
+data.test_CH.wind <- swiss_wind_df[-train_index_CH.wind, ]
+
+# Train a support vector machine (svm) model on training dataset
+swiss_wind_svm_train <- svm(y_CH.wind ~ x_CH.wind, data = data.train_CH.wind)
+
+# Compute forecasts on testing dataset
+swiss_wind_svm_test <- predict(swiss_wind_svm_train, newdata = data.frame(data.test_CH.wind))
+
+# Determine performance metrics
+forecast::accuracy(swiss_wind_svm_test, data.test_CH.wind$y_CH.wind)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+swiss_wind_forecast_june1st <- predict(swiss_wind_svm_train, newdata = data.frame(x_CH.wind = june1st))
+swiss_wind_svm_june1st <- swiss_wind_forecast_june1st[1178]
+print(swiss_wind_svm_june1st)
+
+# Plot the results - Swiss Wind (CH.wind) June 1st
+ylim <- c(min(swiss_wind_df$y_CH.wind), max(swiss_wind_df$y_CH.wind))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_CH.wind$y_CH.wind), y = data.train_CH.wind$y_CH.wind, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Swiss Wind - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_CH.wind$y_CH.wind), y = swiss_wind_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_CH.wind$y_CH.wind) + 1:length(data.test_CH.wind$y_CH.wind),y = data.test_CH.wind$y_CH.wind)
+lines(x=length(data.train_CH.wind$y_CH.wind) + 1:length(data.test_CH.wind$y_CH.wind), y = swiss_wind_svm_test, col = "red")
+
+##############################-GERMANY HYDRO-##############################
+
+# Importing and selecting data for DE.hydro
+germany_hydro_data <- imp_energy_sources %>% dplyr::select(Date, DE.hydro)
+
+# Prepare Germany Hydro in the form of a data frame with columns of time-steps (x) and values (y)
+germany_hydro_data <- germany_hydro_data[, -c(1)]
+germany_hydro_daily_data <- unclass(germany_hydro_data)
+daily <- 1:1177
+germany_hydro_df <- data.frame(daily, germany_hydro_daily_data)
+colnames(germany_hydro_df)<-c("x_DE.hydro","y_DE.hydro")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.hydro <- 1:(nrow(germany_hydro_df) * train_size)
+data.train_DE.hydro <- germany_hydro_df[train_index_DE.hydro, ]
+data.test_DE.hydro <- germany_hydro_df[-train_index_DE.hydro, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_hydro_svm_train <- svm(y_DE.hydro ~ x_DE.hydro, data = data.train_DE.hydro)
+
+# Compute forecasts on testing dataset
+germany_hydro_svm_test <- predict(germany_hydro_svm_train, newdata = data.frame(data.test_DE.hydro))
+
+# Determine performance metrics
+forecast::accuracy(germany_hydro_svm_test, data.test_DE.hydro$y_DE.hydro)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_hydro_forecast_june1st <- predict(germany_hydro_svm_train, newdata = data.frame(x_DE.hydro = june1st))
+germany_hydro_svm_june1st <- germany_hydro_forecast_june1st[1178]
+print(germany_hydro_svm_june1st)
+
+# Plot the results -Germany Hydro (DE.hydro) June 1st
+ylim <- c(min(germany_hydro_df$y_DE.hydro), max(germany_hydro_df$y_DE.hydro))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.hydro$y_DE.hydro), y = data.train_DE.hydro$y_DE.hydro, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Hydro - SVM Model", xlab = "Day", ylab = "Actual Generation (MW")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.hydro$y_DE.hydro), y = germany_hydro_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.hydro$y_DE.hydro) + 1:length(data.test_DE.hydro$y_DE.hydro),y = data.test_DE.hydro$y_DE.hydro)
+lines(x=length(data.train_DE.hydro$y_DE.hydro) + 1:length(data.test_DE.hydro$y_DE.hydro), y = germany_hydro_svm_test, col = "red")
+
+##############################-GERMANY GAS-##############################
+
+# Importing and selecting data for DE.gas
+germany_gas_data <- imp_energy_sources %>% dplyr::select(Date, DE.gas)
+
+# Prepare Germany Gas in the form of a data frame with columns of time-steps (x) and values (y)
+germany_gas_data <- germany_gas_data[, -c(1)]
+germany_gas_daily_data <- unclass(germany_gas_data)
+daily <- 1:1177
+germany_gas_df <- data.frame(daily, germany_gas_daily_data)
+colnames(germany_gas_df)<-c("x_DE.gas","y_DE.gas")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.gas <- 1:(nrow(germany_gas_df) * train_size)
+data.train_DE.gas <- germany_gas_df[train_index_DE.gas, ]
+data.test_DE.gas <- germany_gas_df[-train_index_DE.gas, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_gas_svm_train <- svm(y_DE.gas ~ x_DE.gas, data = data.train_DE.gas)
+
+# Compute forecasts on testing dataset
+germany_gas_svm_test <- predict(germany_gas_svm_train, newdata = data.frame(data.test_DE.gas))
+
+# Determine performance metrics
+forecast::accuracy(germany_gas_svm_test, data.test_DE.gas$y_DE.gas)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_gas_forecast_june1st <- predict(germany_gas_svm_train, newdata = data.frame(x_DE.gas = june1st))
+germany_gas_svm_june1st <- germany_gas_forecast_june1st[1178]
+print(germany_gas_svm_june1st)
+
+# Plot the results - Germany Gas (DE.gas) June 1st
+ylim <- c(min(germany_gas_df$y_DE.gas), max(germany_gas_df$y_DE.gas))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.gas$y_DE.gas), y = data.train_DE.gas$y_DE.gas, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Gas - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.gas$y_DE.gas), y = germany_gas_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.gas$y_DE.gas) + 1:length(data.test_DE.gas$y_DE.gas),y = data.test_DE.gas$y_DE.gas)
+lines(x=length(data.train_DE.gas$y_DE.gas) + 1:length(data.test_DE.gas$y_DE.gas), y = germany_gas_svm_test, col = "red")
+
+##############################-GERMANY OIL-##############################
+
+# Importing and selecting data for DE.oil
+germany_oil_data <- imp_energy_sources %>% dplyr::select(Date, DE.oil)
+
+# Prepare Germany Oil in the form of a data frame with columns of time-steps (x) and values (y)
+germany_oil_data <- germany_oil_data[, -c(1)]
+germany_oil_daily_data <- unclass(germany_oil_data)
+daily <- 1:1177
+germany_oil_df <- data.frame(daily, germany_oil_daily_data)
+colnames(germany_oil_df)<-c("x_DE.oil","y_DE.oil")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.oil <- 1:(nrow(germany_oil_df) * train_size)
+data.train_DE.oil <- germany_oil_df[train_index_DE.oil, ]
+data.test_DE.oil <- germany_oil_df[-train_index_DE.oil, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_oil_svm_train <- svm(y_DE.oil ~ x_DE.oil, data = data.train_DE.oil)
+
+# Compute forecasts on testing dataset
+germany_oil_svm_test <- predict(germany_oil_svm_train, newdata = data.frame(data.test_DE.oil))
+
+# Determine performance metrics
+forecast::accuracy(germany_oil_svm_test, data.test_DE.oil$y_DE.oil)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_oil_forecast_june1st <- predict(germany_oil_svm_train, newdata = data.frame(x_DE.oil = june1st))
+germany_oil_svm_june1st <- germany_oil_forecast_june1st[1178]
+print(germany_oil_svm_june1st)
+
+# Plot the results - Germany Oil (DE.oil) June 1st
+ylim <- c(min(germany_oil_df$y_DE.oil), max(germany_oil_df$y_DE.oil))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.oil$y_DE.oil), y = data.train_DE.oil$y_DE.oil, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Oil - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.oil$y_DE.oil), y = germany_oil_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.oil$y_DE.oil) + 1:length(data.test_DE.oil$y_DE.oil),y = data.test_DE.oil$y_DE.oil)
+lines(x=length(data.train_DE.oil$y_DE.oil) + 1:length(data.test_DE.oil$y_DE.oil), y = germany_oil_svm_test, col = "red")
+
+##############################-GERMANY COAL-##############################
+
+# Importing and selecting data for DE.coal
+germany_coal_data <- imp_energy_sources %>% dplyr::select(Date, DE.coal)
+
+# Prepare Germany Coal in the form of a data frame with columns of time-steps (x) and values (y)
+germany_coal_data <- germany_coal_data[, -c(1)]
+germany_coal_daily_data <- unclass(germany_coal_data)
+daily <- 1:1177
+germany_coal_df <- data.frame(daily, germany_coal_daily_data)
+colnames(germany_coal_df)<-c("x_DE.coal","y_DE.coal")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.coal <- 1:(nrow(germany_coal_df) * train_size)
+data.train_DE.coal <- germany_coal_df[train_index_DE.coal, ]
+data.test_DE.coal <- germany_coal_df[-train_index_DE.coal, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_coal_svm_train <- lm(y_DE.coal ~ x_DE.coal, data = data.train_DE.coal)
+
+# Compute forecasts on testing dataset
+germany_coal_svm_test <- predict(germany_coal_svm_train, newdata = data.frame(data.test_DE.coal))
+
+# Determine performance metrics
+forecast::accuracy(germany_coal_svm_test, data.test_DE.coal$y_DE.coal)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_coal_forecast_june1st <- predict(germany_coal_svm_train, newdata = data.frame(x_DE.coal = june1st))
+germany_coal_svm_june1st <- germany_coal_forecast_june1st[1178]
+print(germany_coal_svm_june1st)
+
+# Plot the results - Germany Coal (DE.coal) June 1st
+ylim <- c(min(germany_coal_df$y_DE.coal), max(germany_coal_df$y_DE.coal))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.coal$y_DE.coal), y = data.train_DE.coal$y_DE.coal, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Coal - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.coal$y_DE.coal), y = germany_coal_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.coal$y_DE.coal) + 1:length(data.test_DE.coal$y_DE.coal),y = data.test_DE.coal$y_DE.coal)
+lines(x=length(data.train_DE.coal$y_DE.coal) + 1:length(data.test_DE.coal$y_DE.coal), y = germany_coal_svm_test, col = "red")
+
+##############################-GERMANY NUCLEAR-##############################
+
+# Importing and selecting data for DE.nuclear
+germany_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, DE.nuclear)
+
+# Prepare Germany Nuclear in the form of a data frame with columns of time-steps (x) and values (y)
+germany_nuclear_data <- germany_nuclear_data[, -c(1)]
+germany_nuclear_daily_data <- unclass(germany_nuclear_data)
+daily <- 1:1177
+germany_nuclear_df <- data.frame(daily, germany_nuclear_daily_data)
+colnames(germany_nuclear_df)<-c("x_DE.nuclear","y_DE.nuclear")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.nuclear <- 1:(nrow(germany_nuclear_df) * train_size)
+data.train_DE.nuclear <- germany_nuclear_df[train_index_DE.nuclear, ]
+data.test_DE.nuclear <- germany_nuclear_df[-train_index_DE.nuclear, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_nuclear_svm_train <- svm(y_DE.nuclear ~ x_DE.nuclear, data = data.train_DE.nuclear)
+
+# Compute forecasts on testing dataset
+germany_nuclear_svm_test <- predict(germany_nuclear_svm_train, newdata = data.frame(data.test_DE.nuclear))
+
+# Determine performance metrics
+forecast::accuracy(germany_nuclear_svm_test, data.test_DE.nuclear$y_DE.nuclear)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_nuclear_forecast_june1st <- predict(germany_nuclear_svm_train, newdata = data.frame(x_DE.nuclear = june1st))
+germany_nuclear_svm_june1st <- germany_nuclear_forecast_june1st[1178]
+print(germany_nuclear_svm_june1st)
+
+# Plot the results - Germany Nuclear (DE.nuclear) June 1st
+ylim <- c(min(germany_nuclear_df$y_DE.nuclear), max(germany_nuclear_df$y_DE.nuclear))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.nuclear$y_DE.nuclear), y = data.train_DE.nuclear$y_DE.nuclear, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Nuclear - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.nuclear$y_DE.nuclear), y = germany_nuclear_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.nuclear$y_DE.nuclear) + 1:length(data.test_DE.nuclear$y_DE.nuclear),y = data.test_DE.nuclear$y_DE.nuclear)
+lines(x=length(data.train_DE.nuclear$y_DE.nuclear) + 1:length(data.test_DE.nuclear$y_DE.nuclear), y = germany_nuclear_svm_test, col = "red")
+
+##############################-GERMANY SOLAR-##############################
+
+# Importing and selecting data for DE.solar
+germany_solar_data <- imp_energy_sources %>% dplyr::select(Date, DE.solar)
+
+# Prepare Germany Solar in the form of a data frame with columns of time-steps (x) and values (y)
+germany_solar_data <- germany_solar_data[, -c(1)]
+germany_solar_daily_data <- unclass(germany_solar_data)
+daily <- 1:1177
+germany_solar_df <- data.frame(daily, germany_solar_daily_data)
+colnames(germany_solar_df)<-c("x_DE.solar","y_DE.solar")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.solar <- 1:(nrow(germany_solar_df) * train_size)
+data.train_DE.solar <- germany_solar_df[train_index_DE.solar, ]
+data.test_DE.solar <- germany_solar_df[-train_index_DE.solar, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_solar_svm_train <- svm(y_DE.solar ~ x_DE.solar, data = data.train_DE.solar)
+
+# Compute forecasts on testing dataset
+germany_solar_svm_test <- predict(germany_solar_svm_train, newdata = data.frame(data.test_DE.solar))
+
+# Determine performance metrics
+forecast::accuracy(germany_solar_svm_test, data.test_DE.solar$y_DE.solar)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_solar_forecast_june1st <- predict(germany_solar_svm_train, newdata = data.frame(x_DE.solar = june1st))
+germany_solar_svm_june1st <- germany_solar_forecast_june1st[1178]
+print(germany_solar_svm_june1st)
+
+# Plot the results - Germany Solar (DE.solar) June 1st
+ylim <- c(min(germany_solar_df$y_DE.solar), max(germany_solar_df$y_DE.solar))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.solar$y_DE.solar), y = data.train_DE.solar$y_DE.solar, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Solar - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.solar$y_DE.solar), y = germany_solar_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.solar$y_DE.solar) + 1:length(data.test_DE.solar$y_DE.solar),y = data.test_DE.solar$y_DE.solar)
+lines(x=length(data.train_DE.solar$y_DE.solar) + 1:length(data.test_DE.solar$y_DE.solar), y = germany_solar_svm_test, col = "red")
+
+##############################-GERMANY WIND-##############################
+
+# Importing and selecting data for DE.wind
+germany_wind_data <- imp_energy_sources %>% dplyr::select(Date, DE.wind)
+
+# Prepare Germany Wind in the form of a data frame with columns of time-steps (x) and values (y)
+germany_wind_data <- germany_wind_data[, -c(1)]
+germany_wind_daily_data <- unclass(germany_wind_data)
+daily <- 1:1177
+germany_wind_df <- data.frame(daily, germany_wind_daily_data)
+colnames(germany_wind_df)<-c("x_DE.wind","y_DE.wind")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_DE.wind <- 1:(nrow(germany_wind_df) * train_size)
+data.train_DE.wind <- germany_wind_df[train_index_DE.wind, ]
+data.test_DE.wind <- germany_wind_df[-train_index_DE.wind, ]
+
+# Train a support vector machine (svm) model on training dataset
+germany_wind_svm_train <- svm(y_DE.wind ~ x_DE.wind, data = data.train_DE.wind)
+
+# Compute forecasts on testing dataset
+germany_wind_svm_test <- predict(germany_wind_svm_train, newdata = data.frame(data.test_DE.wind))
+
+# Determine performance metrics
+forecast::accuracy(germany_wind_svm_test, data.test_DE.wind$y_DE.wind)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+germany_wind_forecast_june1st <- predict(germany_wind_svm_train, newdata = data.frame(x_DE.wind = june1st))
+germany_wind_svm_june1st <- germany_wind_forecast_june1st[1178]
+print(germany_wind_svm_june1st)
+
+# Plot the results - Germany Wind (DE.wind) June 1st
+ylim <- c(min(germany_wind_df$y_DE.wind), max(germany_wind_df$y_DE.wind))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_DE.wind$y_DE.wind), y = data.train_DE.wind$y_DE.wind, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Germany Wind - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_DE.wind$y_DE.wind), y = germany_wind_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_DE.wind$y_DE.wind) + 1:length(data.test_DE.wind$y_DE.wind),y = data.test_DE.wind$y_DE.wind)
+lines(x=length(data.train_DE.wind$y_DE.wind) + 1:length(data.test_DE.wind$y_DE.wind), y = germany_wind_svm_test, col = "red")
+
+##############################-FRANCE HYDRO-##############################
+
+# Importing and selecting data for FR.hydro
+france_hydro_data <- imp_energy_sources %>% dplyr::select(Date, FR.hydro)
+
+# Prepare France Hydro in the form of a data frame with columns of time-steps (x) and values (y)
+france_hydro_data <- france_hydro_data[, -c(1)]
+france_hydro_daily_data <- unclass(france_hydro_data)
+daily <- 1:1177
+france_hydro_df <- data.frame(daily, france_hydro_daily_data)
+colnames(france_hydro_df)<-c("x_FR.hydro", "y_FR.hydro")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.hydro <- 1:(nrow(france_hydro_df) * train_size)
+data.train_FR.hydro <- france_hydro_df[train_index_FR.hydro, ]
+data.test_FR.hydro <- france_hydro_df[-train_index_FR.hydro, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_hydro_svm_train <- svm(y_FR.hydro ~ x_FR.hydro, data = data.train_FR.hydro)
+
+# Compute forecasts on testing dataset
+france_hydro_svm_test <- predict(france_hydro_svm_train, newdata = data.frame(data.test_FR.hydro))
+
+# Determine performance metrics
+forecast::accuracy(france_hydro_svm_test, data.test_FR.hydro$y_FR.hydro)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_hydro_forecast_june1st <- predict(france_hydro_svm_train, newdata = data.frame(x_FR.hydro = june1st))
+france_hydro_svm_june1st <- france_hydro_forecast_june1st[1178]
+print(france_hydro_svm_june1st)
+
+# Plot the results - France Hydro (FR.hydro) June 1st
+ylim <- c(min(france_hydro_df$y_FR.hydro), max(france_hydro_df$y_FR.hydro))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.hydro$y_FR.hydro), y = data.train_FR.hydro$y_FR.hydro, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Hydro - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.hydro$y_FR.hydro), y = france_hydro_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.hydro$y_FR.hydro) + 1:length(data.test_FR.hydro$y_FR.hydro),y = data.test_FR.hydro$y_FR.hydro)
+lines(x=length(data.train_FR.hydro$y_FR.hydro) + 1:length(data.test_FR.hydro$y_FR.hydro), y = france_hydro_svm_test, col = "red")
+
+##############################-FRANCE GAS-##############################
+
+# Importing and selecting data for FR.gas
+france_gas_data <- imp_energy_sources %>% dplyr::select(Date, FR.gas)
+
+# Prepare France Gas in the form of a data frame with columns of time-steps (x) and values (y)
+france_gas_data <- france_gas_data[, -c(1)]
+france_gas_daily_data <- unclass(france_gas_data)
+daily <- 1:1177
+france_gas_df <- data.frame(daily, france_gas_daily_data)
+colnames(france_gas_df)<-c("x_FR.gas", "y_FR.gas")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.gas <- 1:(nrow(france_gas_df) * train_size)
+data.train_FR.gas <- france_gas_df[train_index_FR.gas, ]
+data.test_FR.gas <- france_gas_df[-train_index_FR.gas, ]
+
+# Train a support vector machine (SVM) model on training dataset
+france_gas_svm_train <- svm(y_FR.gas ~ x_FR.gas, data = data.train_FR.gas)
+
+# Compute forecasts on testing dataset
+france_gas_svm_test <- predict(france_gas_svm_train, newdata = data.frame(data.test_FR.gas))
+
+# Determine performance metrics
+forecast::accuracy(france_gas_svm_test, data.test_FR.gas$y_FR.gas)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_gas_forecast_june1st <- predict(france_gas_svm_train, newdata = data.frame(x_FR.gas = june1st))
+france_gas_svm_june1st <- france_gas_forecast_june1st[1178]
+print(france_gas_svm_june1st)
+
+# Plot the results - France Gas (FR.gas) June 1st
+ylim <- c(min(france_gas_df$y_FR.gas), max(france_gas_df$y_FR.gas))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.gas$y_FR.gas), y = data.train_FR.gas$y_FR.gas, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Gas - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.gas$y_FR.gas), y = france_gas_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.gas$y_FR.gas) + 1:length(data.test_FR.gas$y_FR.gas),y = data.test_FR.gas$y_FR.gas)
+lines(x=length(data.train_FR.gas$y_FR.gas) + 1:length(data.test_FR.gas$y_FR.gas), y = france_gas_svm_test, col = "red")
+
+##############################-FRANCE OIL-##############################
+
+# Importing and selecting data for FR.oil
+france_oil_data <- imp_energy_sources %>% dplyr::select(Date, FR.oil)
+
+# Prepare France Oil in the form of a data frame with columns of time-steps (x) and values (y)
+france_oil_data <- france_oil_data[, -c(1)]
+france_oil_daily_data <- unclass(france_oil_data)
+daily <- 1:1177
+france_oil_df <- data.frame(daily, france_oil_daily_data)
+colnames(france_oil_df)<-c("x_FR.oil", "y_FR.oil")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.oil <- 1:(nrow(france_oil_df) * train_size)
+data.train_FR.oil <- france_oil_df[train_index_FR.oil, ]
+data.test_FR.oil <- france_oil_df[-train_index_FR.oil, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_oil_svm_train <- svm(y_FR.oil ~ x_FR.oil, data = data.train_FR.oil)
+
+# Compute forecasts on testing dataset
+france_oil_svm_test <- predict(france_oil_svm_train, newdata = data.frame(data.test_FR.oil))
+
+# Determine performance metrics
+forecast::accuracy(france_oil_svm_test, data.test_FR.oil$y_FR.oil)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_oil_forecast_june1st <- predict(france_oil_svm_train, newdata = data.frame(x_FR.oil = june1st))
+france_oil_svm_june1st <- france_oil_forecast_june1st[1178]
+print(france_oil_svm_june1st)
+
+# Plot the results - France Oil (FR.oil) June 1st
+ylim <- c(min(france_oil_df$y_FR.oil), max(france_oil_df$y_FR.oil))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.oil$y_FR.oil), y = data.train_FR.oil$y_FR.oil, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Oil - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.oil$y_FR.oil), y = france_oil_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.oil$y_FR.oil) + 1:length(data.test_FR.oil$y_FR.oil),y = data.test_FR.oil$y_FR.oil)
+lines(x=length(data.train_FR.oil$y_FR.oil) + 1:length(data.test_FR.oil$y_FR.oil), y = france_oil_svm_test, col = "red")
+
+##############################-FRANCE COAL-##############################
+
+# Importing and selecting data for FR.coal
+france_coal_data <- imp_energy_sources %>% dplyr::select(Date, FR.coal)
+
+# Prepare France Coal in the form of a data frame with columns of time-steps (x) and values (y)
+france_coal_data <- france_coal_data[, -c(1)]
+france_coal_daily_data <- unclass(france_coal_data)
+daily <- 1:1177
+france_coal_df <- data.frame(daily, france_coal_daily_data)
+colnames(france_coal_df)<-c("x_FR.coal", "y_FR.coal")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.coal <- 1:(nrow(france_coal_df) * train_size)
+data.train_FR.coal <- france_coal_df[train_index_FR.coal, ]
+data.test_FR.coal <- france_coal_df[-train_index_FR.coal, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_coal_svm_train <- svm(y_FR.coal ~ x_FR.coal, data = data.train_FR.coal)
+
+# Compute forecasts on testing dataset
+france_coal_svm_test <- predict(france_coal_svm_train, newdata = data.frame(data.test_FR.coal))
+
+# Determine performance metrics
+forecast::accuracy(france_coal_svm_test, data.test_FR.coal$y_FR.coal)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_coal_forecast_june1st <- predict(france_coal_svm_train, newdata = data.frame(x_FR.coal = june1st))
+france_coal_svm_june1st <- france_coal_forecast_june1st[1178]
+print(france_coal_svm_june1st)
+
+# Plot the results - France Coal (FR.coal) June 1st
+ylim <- c(min(france_coal_df$y_FR.coal), max(france_coal_df$y_FR.coal))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.coal$y_FR.coal), y = data.train_FR.coal$y_FR.coal, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Coal - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.coal$y_FR.coal), y = france_coal_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.coal$y_FR.coal) + 1:length(data.test_FR.coal$y_FR.coal),y = data.test_FR.coal$y_FR.coal)
+lines(x=length(data.train_FR.coal$y_FR.coal) + 1:length(data.test_FR.coal$y_FR.coal), y = france_coal_svm_test, col = "red")
+
+##############################-FRANCE NUCLEAR-##############################
+
+# Prepare France Nuclear in the form of a data frame with columns of time-steps (x) and values (y)
+france_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, FR.nuclear)
+
+# Prepare France Nuclear in the form of a data frame with columns of time-steps (x) and values (y)
+france_nuclear_data <- france_nuclear_data[, -c(1)]
+france_nuclear_daily_data <- unclass(france_nuclear_data)
+daily <- 1:1177
+france_nuclear_df <- data.frame(daily, france_nuclear_daily_data)
+colnames(france_nuclear_df)<-c("x_FR.nuclear", "y_FR.nuclear")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.nuclear <- 1:(nrow(france_nuclear_df) * train_size)
+data.train_FR.nuclear <- france_nuclear_df[train_index_FR.nuclear, ]
+data.test_FR.nuclear <- france_nuclear_df[-train_index_FR.nuclear, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_nuclear_svm_train <- svm(y_FR.nuclear ~ x_FR.nuclear, data = data.train_FR.nuclear)
+
+# Compute forecasts on testing dataset
+france_nuclear_svm_test <- predict(france_nuclear_svm_train, newdata = data.frame(data.test_FR.nuclear))
+
+# Determine performance metrics
+forecast::accuracy(france_nuclear_svm_test, data.test_FR.nuclear$y_FR.nuclear)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_nuclear_forecast_june1st <- predict(france_nuclear_svm_train, newdata = data.frame(x_FR.nuclear = june1st))
+france_nuclear_svm_june1st <- france_nuclear_forecast_june1st[1178]
+print(france_nuclear_svm_june1st)
+
+# Plot the results - France Nuclear (FR.nuclear) June 1st
+ylim <- c(min(france_nuclear_df$y_FR.nuclear), max(france_nuclear_df$y_FR.nuclear))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.nuclear$y_FR.nuclear), y = data.train_FR.nuclear$y_FR.nuclear, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Nuclear - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.nuclear$y_FR.nuclear), y = france_nuclear_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.nuclear$y_FR.nuclear) + 1:length(data.test_FR.nuclear$y_FR.nuclear),y = data.test_FR.nuclear$y_FR.nuclear)
+lines(x=length(data.train_FR.nuclear$y_FR.nuclear) + 1:length(data.test_FR.nuclear$y_FR.nuclear), y = france_nuclear_svm_test, col = "red")
+
+##############################-FRANCE SOLAR-##############################
+
+# Importing and selecting data for FR.solar
+france_solar_data <- imp_energy_sources %>% dplyr::select(Date, FR.solar)
+
+# Prepare France Solar in the form of a data frame with columns of time-steps (x) and values (y)
+france_solar_data <- france_solar_data[, -c(1)]
+france_solar_daily_data <- unclass(france_solar_data)
+daily <- 1:1177
+france_solar_df <- data.frame(daily, france_solar_daily_data)
+colnames(france_solar_df)<-c("x_FR.solar", "y_FR.solar")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.solar <- 1:(nrow(france_solar_df) * train_size)
+data.train_FR.solar <- france_solar_df[train_index_FR.solar, ]
+data.test_FR.solar <- france_solar_df[-train_index_FR.solar, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_solar_svm_train <- svm(y_FR.solar ~ x_FR.solar, data = data.train_FR.solar)
+
+# Compute forecasts on testing dataset
+france_solar_svm_test <- predict(france_solar_svm_train, newdata = data.frame(data.test_FR.solar))
+
+# Determine performance metrics
+forecast::accuracy(france_solar_svm_test, data.test_FR.solar$y_FR.solar)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_solar_forecast_june1st <- predict(france_solar_svm_train, newdata = data.frame(x_FR.solar = june1st))
+france_solar_svm_june1st <- france_solar_forecast_june1st[1178]
+print(france_solar_svm_june1st)
+
+# Plot the results - France Solar (FR.solar) June 1st
+ylim <- c(min(france_solar_df$y_FR.solar), max(france_solar_df$y_FR.solar))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.solar$y_FR.solar), y = data.train_FR.solar$y_FR.solar, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Solar - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.solar$y_FR.solar), y = france_solar_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.solar$y_FR.solar) + 1:length(data.test_FR.solar$y_FR.solar),y = data.test_FR.solar$y_FR.solar)
+lines(x=length(data.train_FR.solar$y_FR.solar) + 1:length(data.test_FR.solar$y_FR.solar), y = france_solar_svm_test, col = "red")
+
+##############################-FRANCE WIND-##############################
+
+# Importing and selecting data for FR.wind
+france_wind_data <- imp_energy_sources %>% dplyr::select(Date, FR.wind)
+
+# Prepare France Wind in the form of a data frame with columns of time-steps (x) and values (y)
+france_wind_data <- france_wind_data[, -c(1)]
+france_wind_daily_data <- unclass(france_wind_data)
+daily <- 1:1177
+france_wind_df <- data.frame(daily, france_wind_daily_data)
+colnames(france_wind_df)<-c("x_FR.wind", "y_FR.wind")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_FR.wind <- 1:(nrow(france_wind_df) * train_size)
+data.train_FR.wind <- france_wind_df[train_index_FR.wind, ]
+data.test_FR.wind <- france_wind_df[-train_index_FR.wind, ]
+
+# Train a support vector machine (svm) model on training dataset
+france_wind_svm_train <- svm(y_FR.wind ~ x_FR.wind, data = data.train_FR.wind)
+
+# Compute forecasts on testing dataset
+france_wind_svm_test <- predict(france_wind_svm_train, newdata = data.frame(data.test_FR.wind))
+
+# Determine performance metrics
+forecast::accuracy(france_wind_svm_test, data.test_FR.wind$y_FR.wind)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+france_wind_forecast_june1st <- predict(france_wind_svm_train, newdata = data.frame(x_FR.wind = june1st))
+france_wind_svm_june1st <- france_wind_forecast_june1st[1178]
+print(france_wind_svm_june1st)
+
+# Plot the results - France Wind (FR.wind) June 1st
+ylim <- c(min(france_wind_df$y_FR.wind), max(france_wind_df$y_FR.wind))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_FR.wind$y_FR.wind), y = data.train_FR.wind$y_FR.wind, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "France Wind - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_FR.wind$y_FR.wind), y = france_wind_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_FR.wind$y_FR.wind) + 1:length(data.test_FR.wind$y_FR.wind),y = data.test_FR.wind$y_FR.wind)
+lines(x=length(data.train_FR.wind$y_FR.wind) + 1:length(data.test_FR.wind$y_FR.wind), y = france_wind_svm_test, col = "red")
+
+##############################-IRELAND HYDRO-##############################
+
+# Importing and selecting data for IE.hydro
+ireland_hydro_data <- imp_energy_sources %>% dplyr::select(Date, IE.hydro)
+
+# Prepare Ireland Hydro in the form of a data frame with columns of time-steps (x) and values (y)
+ireland_hydro_data <- ireland_hydro_data[, -c(1)]
+ireland_hydro_daily_data <- unclass(ireland_hydro_data)
+daily <- 1:1177
+ireland_hydro_df <- data.frame(daily, ireland_hydro_daily_data)
+colnames(ireland_hydro_df)<-c("x_IE.hydro", "y_IE.hydro")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_IE.hydro <- 1:(nrow(ireland_hydro_df) * train_size)
+data.train_IE.hydro <- ireland_hydro_df[train_index_IE.hydro, ]
+data.test_IE.hydro <- ireland_hydro_df[-train_index_IE.hydro, ]
+
+# Train a support vector machine (svm) model on training dataset
+ireland_hydro_svm_train <- svm(y_IE.hydro ~ x_IE.hydro, data = data.train_IE.hydro)
+
+# Compute forecasts on testing dataset
+ireland_hydro_svm_test <- predict(ireland_hydro_svm_train, newdata = data.frame(data.test_IE.hydro))
+
+# Determine performance metrics
+forecast::accuracy(ireland_hydro_svm_test, data.test_IE.hydro$y_IE.hydro)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+ireland_hydro_forecast_june1st <- predict(ireland_hydro_svm_train, newdata = data.frame(x_IE.hydro = june1st))
+ireland_hydro_svm_june1st <- ireland_hydro_forecast_june1st[1178]
+print(ireland_hydro_svm_june1st)
+
+# Plot the results - Ireland Hydro (IE.hydro) June 1st
+ylim <- c(min(ireland_hydro_df$y_IE.hydro), max(ireland_hydro_df$y_IE.hydro))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_IE.hydro$y_IE.hydro), y = data.train_IE.hydro$y_IE.hydro, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Ireland Hydro - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_IE.hydro$y_IE.hydro), y = ireland_hydro_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_IE.hydro$y_IE.hydro) + 1:length(data.test_IE.hydro$y_IE.hydro),y = data.test_IE.hydro$y_IE.hydro)
+lines(x=length(data.train_IE.hydro$y_IE.hydro) + 1:length(data.test_IE.hydro$y_IE.hydro), y = ireland_hydro_svm_test, col = "red")
+
+##############################-IRELAND GAS-##############################
+
+# Importing and selecting data for IE.gas
+ireland_gas_data <- imp_energy_sources %>% dplyr::select(Date, IE.gas)
+
+# Prepare Ireland Gas in the form of a data frame with columns of time-steps (x) and values (y)
+ireland_gas_data <- ireland_gas_data[, -c(1)]
+ireland_gas_daily_data <- unclass(ireland_gas_data)
+daily <- 1:1177
+ireland_gas_df <- data.frame(daily, ireland_gas_daily_data)
+colnames(ireland_gas_df)<-c("x_IE.gas", "y_IE.gas")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_IE.gas <- 1:(nrow(ireland_gas_df) * train_size)
+data.train_IE.gas <- ireland_gas_df[train_index_IE.gas, ]
+data.test_IE.gas <- ireland_gas_df[-train_index_IE.gas, ]
+
+# Train a support vector machine (svm) model on training dataset
+ireland_gas_svm_train <- svm(y_IE.gas ~ x_IE.gas, data = data.train_IE.gas)
+
+# Compute forecasts on testing dataset
+ireland_gas_svm_test <- predict(ireland_gas_svm_train, newdata = data.frame(data.test_IE.gas))
+
+# Determine performance metrics
+forecast::accuracy(ireland_gas_svm_test, data.test_IE.gas$y_IE.gas)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+ireland_gas_forecast_june1st <- predict(ireland_gas_svm_train, newdata = data.frame(x_IE.gas = june1st))
+ireland_gas_svm_june1st <- ireland_gas_forecast_june1st[1178]
+print(ireland_gas_svm_june1st)
+
+# Plot the results - Ireland Gas (IE.gas) June 1st
+ylim <- c(min(ireland_gas_df$y_IE.gas), max(ireland_gas_df$y_IE.gas))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_IE.gas$y_IE.gas), y = data.train_IE.gas$y_IE.gas, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Ireland Gas - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_IE.gas$y_IE.gas), y = ireland_gas_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_IE.gas$y_IE.gas) + 1:length(data.test_IE.gas$y_IE.gas),y = data.test_IE.gas$y_IE.gas)
+lines(x=length(data.train_IE.gas$y_IE.gas) + 1:length(data.test_IE.gas$y_IE.gas), y = ireland_gas_svm_test, col = "red")
+
+##############################-IRELAND OIL-##############################
+
+# Importing and selecting data for IE.oil
+ireland_oil_data <- imp_energy_sources %>% dplyr::select(Date, IE.oil)
+
+# Prepare Ireland Oil in the form of a data frame with columns of time-steps (x) and values (y)
+ireland_oil_data <- ireland_oil_data[, -c(1)]
+ireland_oil_daily_data <- unclass(ireland_oil_data)
+daily <- 1:1177
+ireland_oil_df <- data.frame(daily, ireland_oil_daily_data)
+colnames(ireland_oil_df)<-c("x_IE.oil", "y_IE.oil")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_IE.oil <- 1:(nrow(ireland_oil_df) * train_size)
+data.train_IE.oil <- ireland_oil_df[train_index_IE.oil, ]
+data.test_IE.oil <- ireland_oil_df[-train_index_IE.oil, ]
+
+# Train a support vector machine (svm) model on training dataset
+ireland_oil_svm_train <- svm(y_IE.oil ~ x_IE.oil, data = data.train_IE.oil)
+
+# Compute forecasts on testing dataset
+ireland_oil_svm_test <- predict(ireland_oil_svm_train, newdata = data.frame(data.test_IE.oil))
+
+# Determine performance metrics
+forecast::accuracy(ireland_oil_svm_test, data.test_IE.oil$y_IE.oil)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+ireland_oil_forecast_june1st <- predict(ireland_oil_svm_train, newdata = data.frame(x_IE.oil = june1st))
+ireland_oil_svm_june1st <- ireland_oil_forecast_june1st[1178]
+print(ireland_oil_svm_june1st)
+
+# Plot the results - Ireland Oil (IE.oil) June 1st
+ylim <- c(min(ireland_oil_df$y_IE.oil), max(ireland_oil_df$y_IE.oil))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_IE.oil$y_IE.oil), y = data.train_IE.oil$y_IE.oil, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Ireland Oil - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_IE.oil$y_IE.oil), y = ireland_oil_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_IE.oil$y_IE.oil) + 1:length(data.test_IE.oil$y_IE.oil),y = data.test_IE.oil$y_IE.oil)
+lines(x=length(data.train_IE.oil$y_IE.oil) + 1:length(data.test_IE.oil$y_IE.oil), y = ireland_oil_svm_test, col = "red")
+
+##############################-IRELAND COAL-##############################
+
+# Importing and selecting data for IE.coal
+ireland_coal_data <- imp_energy_sources %>% dplyr::select(Date, IE.coal)
+
+# Prepare Ireland Coal in the form of a data frame with columns of time-steps (x) and values (y)
+ireland_coal_data <- ireland_coal_data[, -c(1)]
+ireland_coal_daily_data <- unclass(ireland_coal_data)
+daily <- 1:1177
+ireland_coal_df <- data.frame(daily, ireland_coal_daily_data)
+colnames(ireland_coal_df)<-c("x_IE.coal", "y_IE.coal")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_IE.coal <- 1:(nrow(ireland_coal_df) * train_size)
+data.train_IE.coal <- ireland_coal_df[train_index_IE.coal, ]
+data.test_IE.coal <- ireland_coal_df[-train_index_IE.coal, ]
+
+# Train a support vector machine (svm) model on training dataset
+ireland_coal_svm_train <- svm(y_IE.coal ~ x_IE.coal, data = data.train_IE.coal)
+
+# Compute forecasts on testing dataset
+ireland_coal_svm_test <- predict(ireland_coal_svm_train, newdata = data.frame(data.test_IE.coal))
+
+# Determine performance metrics
+forecast::accuracy(ireland_coal_svm_test, data.test_IE.coal$y_IE.coal)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+ireland_coal_forecast_june1st <- predict(ireland_coal_svm_train, newdata = data.frame(x_IE.coal = june1st))
+ireland_coal_svm_june1st <- ireland_coal_forecast_june1st[1178]
+print(ireland_coal_svm_june1st)
+
+# Plot the results - Ireland Coal (IE.coal) June 1st
+ylim <- c(min(ireland_coal_df$y_IE.coal), max(ireland_coal_df$y_IE.coal))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_IE.coal$y_IE.coal), y = data.train_IE.coal$y_IE.coal, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Ireland Coal - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_IE.coal$y_IE.coal), y = ireland_coal_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_IE.coal$y_IE.coal) + 1:length(data.test_IE.coal$y_IE.coal),y = data.test_IE.coal$y_IE.coal)
+lines(x=length(data.train_IE.coal$y_IE.coal) + 1:length(data.test_IE.coal$y_IE.coal), y = ireland_coal_svm_test, col = "red")
+
+##############################-IRELAND WIND-##############################
+
+# Importing and selecting data for IE.wind
+ireland_wind_data <- imp_energy_sources %>% dplyr::select(Date, IE.wind)
+
+# Prepare Ireland Wind in the form of a data frame with columns of time-steps (x) and values (y)
+ireland_wind_data <- ireland_wind_data[, -c(1)]
+ireland_wind_daily_data <- unclass(ireland_wind_data)
+daily <- 1:1177
+ireland_wind_df <- data.frame(daily, ireland_wind_daily_data)
+colnames(ireland_wind_df)<-c("x_IE.wind", "y_IE.wind")
+
+# Perform train-test split
+train_size <- 0.8  # 80% of the data for training, 20% for testing
+train_index_IE.wind <- 1:(nrow(ireland_wind_df) * train_size)
+data.train_IE.wind <- ireland_wind_df[train_index_IE.wind, ]
+data.test_IE.wind <- ireland_wind_df[-train_index_IE.wind, ]
+
+# Train a support vector machine (svm) model on training dataset
+ireland_wind_svm_train <- svm(y_IE.wind ~ x_IE.wind, data = data.train_IE.wind)
+
+# Compute forecasts on testing dataset
+ireland_wind_svm_test <- predict(ireland_wind_svm_train, newdata = data.frame(data.test_IE.wind))
+
+# Determine performance metrics
+forecast::accuracy(ireland_wind_svm_test, data.test_IE.wind$y_IE.wind)
+
+# Specify time-step for future forecast, e.g. for the next day: 1st June, 2023
+june1st <- 1:1178
+
+# Predict for June 1st, 2023
+ireland_wind_forecast_june1st <- predict(ireland_wind_svm_train, newdata = data.frame(x_IE.wind = june1st))
+ireland_wind_svm_june1st <- ireland_wind_forecast_june1st[1178]
+print(ireland_wind_svm_june1st)
+
+# Plot the results - Ireland Wind (IE.wind) June 1st
+ylim <- c(min(ireland_wind_df$y_IE.wind), max(ireland_wind_df$y_IE.wind))
+xlim <- c(min(june1st), max(june1st))
+plot(x = 1:length(data.train_IE.wind$y_IE.wind), y = data.train_IE.wind$y_IE.wind, ylim=ylim, xlim=xlim, type="l", xaxt = 'n', main = "Ireland Wind - SVM Model", xlab = "Day", ylab = "Actual Generation (MW)")
+axis(1, at = c(0, 400, 800, 1200), labels = c('2020-03-11', '2021-04-07','2022-05-04', '2023-05-31'))
+par(new=TRUE)
+lines(x =1:length(data.train_IE.wind$y_IE.wind), y = ireland_wind_svm_train$fitted.values, lwd = 1, col = "blue")
+lines(x =length(data.train_IE.wind$y_IE.wind) + 1:length(data.test_IE.wind$y_IE.wind),y = data.test_IE.wind$y_IE.wind)
+lines(x=length(data.train_IE.wind$y_IE.wind) + 1:length(data.test_IE.wind$y_IE.wind), y = ireland_wind_svm_test, col = "red")
+
+################################################################################
