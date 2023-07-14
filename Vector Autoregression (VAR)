@@ -1,1 +1,135 @@
+# Load required libraries
+library(dplyr)
+library(writexl)
+library(readxl)
+library(mice)
+library(VIM)
+library(tidyverse)
+library(fpp)
+library(forecast)
+library(backtest)
+library(quantmod)
+library(lubridate)
+library(vars)
+library(zoo)
+library(caret)
+library(xgboost)
 
+##############################-VECTOR AUTOREGRESSIVE (VAR) MODEL-##############################
+
+# Sub-setting variables with continuous values of 0 MW
+imp_energy_sources_var <- subset(imp_energy_sources, select = -c(CH.gas, CH.coal, CH.oil, IE.nuclear, IE.solar))
+
+##############################-SWITZERLAND-##############################
+
+# Create a multivariate time series object for Switzerland
+multivariate_swiss <- ts(imp_energy_sources_var[, c("CH.hydro", "CH.nuclear", "CH.solar", "CH.wind")], frequency = 1)
+
+# Perform VAR model selection
+var_select_swiss <- VARselect(multivariate_swiss, lag.max = 5, type = "const")
+
+# Fit the VAR model with the selected lag order (let's say lag order 5)
+var_swiss_model <- VAR(multivariate_swiss, p = 5, type = "const")
+
+# Plots of Fit and Residuals of Swiss energy sources
+pdf("Fit and Residuals of Switzerland's Energy Sources.pdf", width = 10, height = 8)
+plot(var_swiss_model)
+dev.off()
+
+# Summary statistics of VAR model of Swiss energy sources
+summary(var_swiss_model)
+
+# Predict for June 1st, 2023
+var_swiss_pred <- predict(var_swiss_model, n.ahead = 1, ci = 0.95)
+print(var_swiss_pred)
+
+# Plots of Forecasts of Swiss energy sources
+pdf("Forecast of Switzerland's Energy Sources.pdf", width = 10, height = 8)
+plot(var_swiss_pred)
+dev.off()
+
+##############################-GERMANY-##############################
+
+# Create a multivariate time series object for Germany
+multivariate_germany <- ts(imp_energy_sources_var[, c("DE.hydro", "DE.gas", "DE.oil", "DE.coal", "DE.nuclear", "DE.solar", "DE.wind")], frequency = 1)
+
+# Perform VAR model selection
+var_select_germany <- VARselect(multivariate_germany, lag.max = 5, type = "const")
+
+# Fit the VAR model with the selected lag order (let's say lag order 5)
+var_germany_model <- VAR(multivariate_germany, p = 5, type = "const")
+
+# Plots of Fit and Residuals of Germany's energy sources
+pdf("Fit and Residuals of Germany's Energy Sources.pdf", width = 10, height = 8)
+plot(var_germany_model)
+dev.off()
+
+# Summary statistics of VAR model of Germany's energy sources
+summary(var_germany_model)
+
+# Predict for June 1st, 2023
+var_germany_pred <- predict(var_germany_model, n.ahead = 1, ci = 0.95)
+print(var_germany_pred)
+
+# Plots of Forecasts of Germany's energy sources
+pdf("Forecast of Germany's Energy Sources.pdf", width = 10, height = 8)
+plot(var_germany_pred)
+dev.off()
+
+##############################-FRANCE-##############################
+
+# Create a multivariate time series object for France
+multivariate_france <- ts(imp_energy_sources_var[, c("FR.hydro", "FR.gas", "FR.oil", "FR.coal", "FR.nuclear", "FR.solar", "FR.wind")], frequency = 1)
+
+# Perform VAR model selection
+var_select_france <- VARselect(multivariate_france, lag.max = 5, type = "const")
+
+# Fit the VAR model with the selected lag order (let's say lag order 5)
+var_france_model <- VAR(multivariate_france, p = 5, type = "const")
+
+# Plots of Fit and Residuals of France's energy sources
+pdf("Fit and Residuals of France's Energy Sources.pdf", width = 10, height = 8)
+plot(var_france_model)
+dev.off()
+
+# Summary statistics of VAR model of Germany's energy sources
+summary(var_france_model)
+
+# Predict for June 1st, 2023
+var_france_pred <- predict(var_france_model, n.ahead = 1, ci = 0.95)
+print(var_france_pred)
+
+# Plots of Forecasts of France's energy sources
+pdf("Forecast of France's Energy Sources.pdf", width = 10, height = 8)
+plot(var_france_pred)
+dev.off()
+
+##############################-IRELAND-##############################
+
+# Create a multivariate time series object for Ireland
+multivariate_ireland <- ts(imp_energy_sources_var[, c("IE.hydro", "IE.gas", "IE.oil", "IE.coal", "IE.wind")], frequency = 1)
+
+# Perform VAR model selection
+var_select_ireland <- VARselect(multivariate_ireland, lag.max = 5, type = "const")
+
+# Fit the VAR model with the selected lag order (let's say lag order 5)
+var_ireland_model <- VAR(multivariate_ireland, p = 5, type = "const")
+
+# Plots of Fit and Residuals of Ireland's energy sources
+pdf("Fit and Residuals of Ireland's Energy Sources.pdf", width = 10, height = 8)
+plot(var_ireland_model)
+dev.off()
+
+# Summary statistics of VAR model of Germany's energy sources
+summary(var_ireland_model)
+
+# Predict for June 1st, 2023
+var_ireland_pred <- predict(var_ireland_model, n.ahead = 1, ci = 0.95)
+print(var_ireland_pred)
+
+# Plots of Forecasts of Ireland's energy sources
+pdf("Forecast of Ireland's Energy Sources.pdf", width = 10, height = 8)
+plot(var_ireland_pred)
+dev.off()
+
+################################################################################
