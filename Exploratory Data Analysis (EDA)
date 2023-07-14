@@ -1,0 +1,81 @@
+# Load required libraries
+library(ggplot2)
+library(lattice)
+library(RColorBrewer)
+
+##############################-EXPLORATORY DATA ANALYSIS (EDA)-##############################
+
+##############################-SWITZERLAND-##############################
+swiss_hydro_data <- imp_energy_sources %>% dplyr::select(Date, CH.hydro)
+swiss_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, CH.nuclear)
+swiss_solar_data <- imp_energy_sources %>% dplyr::select(Date, CH.solar)
+swiss_wind_data <- imp_energy_sources %>% dplyr::select(Date, CH.wind)
+
+# Plots for Switzerland
+par(mfrow = c(2, 2))
+plot(x = swiss_hydro_data$Date, y = swiss_hydro_data$CH.hydro, type="l", main = "Swiss Hydro", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = swiss_nuclear_data$Date, y = swiss_nuclear_data$CH.nuclear, type = "l", main = "Swiss Nuclear", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = swiss_solar_data$Date, y = swiss_solar_data$CH.solar, type = "l", main = "Swiss Solar", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = swiss_wind_data$Date, y = swiss_wind_data$CH.wind, type = "l", main = "Swiss Wind", xlab = "Day", ylab = "Actual Generation (MW)")
+
+
+##############################-FRANCE-##############################
+france_hydro_data <- imp_energy_sources %>% dplyr::select(Date, FR.hydro)
+france_gas_data <- imp_energy_sources %>% dplyr::select(Date, FR.gas)
+france_oil_data <- imp_energy_sources %>% dplyr::select(Date, FR.oil)
+france_coal_data <- imp_energy_sources %>% dplyr::select(Date, FR.coal)
+france_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, FR.nuclear)
+france_solar_data <- imp_energy_sources %>% dplyr::select(Date, FR.solar)
+france_wind_data <- imp_energy_sources %>% dplyr::select(Date, FR.wind)
+
+# Plots for France - Renewables
+par(mfrow = c(2, 2))
+plot(x = france_hydro_data$Date, y = france_hydro_data$FR.hydro, type="l", main = "France Hydro", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = france_nuclear_data$Date, y = france_nuclear_data$FR.nuclear, type = "l", main = "France Nuclear", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = france_solar_data$Date, y = france_solar_data$FR.solar, type = "l", main = "France Solar", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = france_wind_data$Date, y = france_wind_data$FR.wind, type = "l", main = "France Wind", xlab = "Day", ylab = "Actual Generation (MW)")
+
+# Plots for France - Non-renewables
+par(mfrow = c(2, 2))
+plot(x = france_gas_data$Date, y = france_gas_data$FR.gas, type="l", main = "France Gas", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = france_oil_data$Date, y = france_oil_data$FR.oil, type="l", main = "France Oil", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = france_coal_data$Date, y = france_coal_data$FR.coal, type="l", main = "France Coal", xlab = "Day", ylab = "Actual Generation (MW)")
+
+##############################-GERMANY-##############################
+germany_hydro_data <- imp_energy_sources %>% dplyr::select(Date, DE.hydro)
+germany_gas_data <- imp_energy_sources %>% dplyr::select(Date, DE.gas)
+germany_oil_data <- imp_energy_sources %>% dplyr::select(Date, DE.oil)
+germany_coal_data <- imp_energy_sources %>% dplyr::select(Date, DE.coal)
+germany_nuclear_data <- imp_energy_sources %>% dplyr::select(Date, DE.nuclear)
+germany_solar_data <- imp_energy_sources %>% dplyr::select(Date, DE.solar)
+germany_wind_data <- imp_energy_sources %>% dplyr::select(Date, DE.wind)
+
+# Plots for Germany - Renewables
+par(mfrow = c(2, 2))
+plot(x = germany_hydro_data$Date, y = germany_hydro_data$DE.hydro, type="l", main = "Germany Hydro", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = germany_nuclear_data$Date, y = germany_nuclear_data$DE.nuclear, type = "l", main = "Germany Nuclear", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = germany_solar_data$Date, y = germany_solar_data$DE.solar, type = "l", main = "Germany Solar", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = germany_wind_data$Date, y = germany_wind_data$DE.wind, type = "l", main = "Germany Wind", xlab = "Day", ylab = "Actual Generation (MW)")
+
+# Plots for Germany - Non-renewables
+par(mfrow = c(2, 2))
+plot(x = germany_gas_data$Date, y = germany_gas_data$DE.gas, type="l", main = "Germany Gas", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = germany_oil_data$Date, y = germany_oil_data$DE.oil, type="l", main = "Germany Oil", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = germany_coal_data$Date, y = germany_coal_data$DE.coal, type="l", main = "Germany Coal", xlab = "Day", ylab = "Actual Generation (MW)")
+
+##############################-IRELAND-##############################
+ireland_hydro_data <- imp_energy_sources %>% dplyr::select(Date, IE.hydro)
+ireland_gas_data <- imp_energy_sources %>% dplyr::select(Date, IE.gas)
+ireland_oil_data <- imp_energy_sources %>% dplyr::select(Date, IE.oil)
+ireland_coal_data <- imp_energy_sources %>% dplyr::select(Date, IE.coal)
+ireland_wind_data <- imp_energy_sources %>% dplyr::select(Date, IE.wind)
+
+# Plots for Germany - Renewables
+par(mfrow = c(3, 2))
+plot(x = ireland_hydro_data$Date, y = ireland_hydro_data$IE.hydro, type="l", main = "Ireland Hydro", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = ireland_gas_data$Date, y = ireland_gas_data$IE.gas, type = "l", main = "Ireland Gas", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = ireland_oil_data$Date, y = ireland_oil_data$IE.oil, type = "l", main = "Ireland Oil", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = ireland_coal_data$Date, y = ireland_coal_data$IE.coal, type = "l", main = "Ireland Coal", xlab = "Day", ylab = "Actual Generation (MW)")
+plot(x = ireland_wind_data$Date, y = ireland_wind_data$IE.wind, type = "l", main = "Ireland Wind", xlab = "Day", ylab = "Actual Generation (MW)")
+
+################################################################################
